@@ -1,0 +1,280 @@
+buatkan versi finalnya ke dalam suatu file saja yang diubah sehingga meminimalisir terjadinya error
+'use client';
+import React, { useEffect, useState } from 'react';
+
+export default function ProjectPage() {
+  const [projects, setProjects] = useState<any[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEdit, setIsEdit] = useState(false);
+
+  const [selectedId, setSelectedId] = useState('');
+
+  const [formData, setFormData] = useState({
+    id: '',
+    name: '',
+    description: '',
+    client_name: '',
+    start_date: '',
+    deadline: '',
+    status: 'Planning',
+    budget: 0,
+  });
+
+  const fetchProjects = async () => {
+    const res = await fetch('http://localhost:8000/api/v1/projects');
+    const data = await res.json();
+    setProjects(data);
+  };
+
+  useEffect(() => {
+    fetchProjects();
+  }, []);
+
+  // ================= SUBMIT =================
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (isEdit) {
+      await fetch(`http://localhost:8000/api/v1/projects/${selectedId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formData.name,
+          description: formData.description,
+          client_name: formData.client_name,
+          status: formData.status,
+          budget: formData.budget,
+        }),
+      });
+      alert("Project diupdate!");
+    } else {
+      await fetch('http://localhost:8000/api/v1/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+      alert("Project ditambahkan!");
+    }
+
+    setIsModalOpen(false);
+    setIsEdit(false);
+    fetchProjects();
+  };
+
+  // ================= DELETE =================
+  const handleDelete = async (id: string) => {
+    if (!confirm("Yakin ingin hapus project?")) return;
+
+    await fetch(`http://localhost:8000/api/v1/projects/${id}`, {
+      method: 'DELETE',
+    });
+
+    fetchProjects();
+  };
+
+  // ================= EDIT =================
+  const handleEdit = (p: any) => {
+    setIsEdit(true);
+    setSelectedId(p.id);
+
+    setFormData({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      client_name: p.client_name,
+      start_date: p.start_date,
+      deadline: p.deadline,
+      status: p.status,
+      budget: p.budget,
+    });
+
+    setIsModalOpen(true);
+  };
+
+  const inputStyle =
+    "w-full border p-2 rounded bg-white text-gray-800 placeholder-gray-400 focus:ring-2 focus:ring-blue-400 outline-none";
+
+  return (
+    <div className="p-6 bg-gray-50 min-h-screen">
+
+      {/* HEADER */}
+      <div className="flex justify-between mb-6">
+        <h1 className="text-3xl font-bold text-blue-700">Daftar Proyek</h1>
+
+        <button
+          onClick={() => {
+            setIsEdit(false);
+            setFormData({
+              id: '',
+              name: '',
+              description: '',
+              client_name: '',
+              start_date: '',
+              deadline: '',
+              status: 'Planning',
+              budget: 0,
+            });
+            setIsModalOpen(true);
+          }}
+          className="bg-green-600 text-white px-4 py-2 rounded-xl"
+        >
+          + Tambah
+        </button>
+      </div>
+
+      {/* TABLE */}
+      <div className="bg-white rounded-xl shadow border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-100 text-gray-700">
+            <tr>
+              <th className="p-3">ID</th>
+              <th>Nama</th>
+              <th>Client</th>
+              <th>Status</th>
+              <th>Progress</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {projects.map((p) => (
+              <tr key={p.id} className="border-b hover:bg-gray-50">
+
+                <td className="p-3 text-blue-600 font-bold">{p.id}</td>
+                <td className="text-gray-800">{p.name}</td>
+                <td className="text-gray-600">{p.client_name}</td>
+
+                <td>
+                  <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
+                    {p.status}
+                  </span>
+                </td>
+
+                <td className="w-[150px]">
+                  <div className="bg-gray-200 h-2 rounded-full">
+                    <div
+                      className="bg-green-500 h-2 rounded-full"
+                      style={{ width: `${p.progress}%` }}
+                    />
+                  </div>
+                  <span className="text-xs">{p.progress}%</span>
+                </td>
+
+                <td className="flex gap-2 p-2">
+                  <button
+                    onClick={() => handleEdit(p)}
+                    className="bg-yellow-400 px-2 py-1 rounded text-xs"
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    onClick={() => handleDelete(p.id)}
+                    className="bg-red-500 text-white px-2 py-1 rounded text-xs"
+                  >
+                    Hapus
+                  </button>
+                </td>
+
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* MODAL */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center">
+
+          <div className="bg-white p-6 rounded-xl w-full max-w-md">
+
+            <h2 className="text-xl font-bold mb-4">
+              {isEdit ? "Edit Project" : "Tambah Project"}
+            </h2>
+
+            <form onSubmit={handleSubmit} className="space-y-3">
+
+              {!isEdit && (
+                <input
+                  placeholder="ID"
+                  className={inputStyle}
+                  onChange={(e) =>
+                    setFormData({ ...formData, id: e.target.value })
+                  }
+                />
+              )}
+
+              <input
+                placeholder="Nama"
+                className={inputStyle}
+                value={formData.name}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
+              />
+
+              <textarea
+                placeholder="Deskripsi"
+                className={inputStyle}
+                value={formData.description}
+                onChange={(e) =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
+              />
+
+              <input
+                placeholder="Client"
+                className={inputStyle}
+                value={formData.client_name}
+                onChange={(e) =>
+                  setFormData({ ...formData, client_name: e.target.value })
+                }
+              />
+
+              <select
+                className={inputStyle}
+                value={formData.status}
+                onChange={(e) =>
+                  setFormData({ ...formData, status: e.target.value })
+                }
+              >
+                <option>Planning</option>
+                <option>In Progress</option>
+                <option>Completed</option>
+              </select>
+
+              <input
+                type="number"
+                placeholder="Budget"
+                className={inputStyle}
+                value={formData.budget}
+                onChange={(e) =>
+                  setFormData({ ...formData, budget: Number(e.target.value) })
+                }
+              />
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="text-gray-500"
+                >
+                  Batal
+                </button>
+
+                <button
+                  type="submit"
+                  className="bg-green-600 text-white px-4 py-2 rounded"
+                >
+                  Simpan
+                </button>
+              </div>
+
+            </form>
+          </div>
+
+        </div>
+      )}
+    </div>
+  );
+}
