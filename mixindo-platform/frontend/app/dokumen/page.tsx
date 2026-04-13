@@ -1,9 +1,10 @@
 'use client';
 import React, { useEffect, useState } from 'react';
+import { alertSuccess, alertError, alertConfirm } from '@/lib/alerts';
 
 export default function DokumenPage() {
-  const [documents, setDocuments] = useState([]);
-  const [projects, setProjects] = useState([]);
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState({ id: '', name: '', category: 'QA Checklist', project_id: '', file_size: '' });
 
@@ -29,13 +30,54 @@ export default function DokumenPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if(!formData.project_id) return alert("Pilih proyek dulu!");
-    const res = await fetch('http://localhost:8000/api/v1/documents', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData),
-    });
-    if (res.ok) { setIsModalOpen(false); fetchData(); }
+    if(!formData.project_id) {
+      alertError("Proyek Tidak Dipilih", "Silakan pilih proyek terlebih dahulu!");
+      return;
+    }
+
+    try {
+      const res = await fetch('http://localhost:8000/api/v1/documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        alertError("Gagal Menyimpan Dokumen", data.detail || "Terjadi kesalahan pada server");
+        return;
+      }
+
+      await alertSuccess("Dokumen Berhasil Disimpan! 📄", `Dokumen "${formData.name}" telah tersimpan ke database.`);
+      setIsModalOpen(false);
+      setFormData({ id: '', name: '', category: 'QA Checklist', project_id: '', file_size: '' });
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      alertError("Koneksi Gagal", "Backend server tidak merespon.");
+    }
+  };
+
+  const handleDelete = async (docId: string, docName: string) => {
+    const result = await alertConfirm("Hapus Dokumen?", `Apakah Anda yakin ingin menghapus dokumen "${docName}"?`, "Ya, Hapus");
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/documents/${docId}`, { method: 'DELETE' });
+
+      if (!res.ok) {
+        const data = await res.json();
+        alertError("Gagal Menghapus", data.detail || "Terjadi kesalahan");
+        return;
+      }
+
+      await alertSuccess("Dokumen Dihapus! 🗑️", `Dokumen "${docName}" telah dihapus dari database.`);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      alertError("Koneksi Gagal", "Backend server tidak merespon.");
+    }
   };
 
   return (
@@ -54,7 +96,7 @@ export default function DokumenPage() {
             {documents.map((doc: any) => (
               <tr key={doc.id} className="border-b hover:bg-gray-50">
                 <td className="p-4 font-bold text-blue-600">{doc.id}</td><td className="p-4">{doc.name}</td><td className="p-4">{doc.project_id}</td>
-                <td className="p-4"><button onClick={async () => {await fetch(`http://localhost:8000/api/v1/documents/${doc.id}`, {method:'DELETE'}); fetchData();}} className="text-red-500">Hapus</button></td>
+                <td className="p-4"><button onClick={() => handleDelete(doc.id, doc.name)} className="text-red-500 hover:text-red-700 font-medium hover:bg-red-50 px-3 py-1 rounded transition">🗑️ Hapus</button></td>
               </tr>
             ))}
           </tbody>

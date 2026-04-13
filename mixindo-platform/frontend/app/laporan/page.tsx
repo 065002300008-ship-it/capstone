@@ -1,5 +1,6 @@
 'use client';
 import React, { useEffect, useState } from 'react';
+import { alertSuccess, alertError, alertConfirm, alertInfo } from '@/lib/alerts';
 
 export default function LaporanPage() {
   const [reports, setReports] = useState<any[]>([]);
@@ -22,7 +23,7 @@ export default function LaporanPage() {
       setProjects(Array.isArray(projectsData) ? projectsData : []);
     } catch (err) {
       console.error("Koneksi gagal:", err);
-      alert("Gagal memuat data. Pastikan backend berjalan dan endpoint benar.");
+      alertError("Gagal Memuat Data", "Backend server tidak merespon. Pastikan server berjalan di port 8000.");
       setReports([]);
       setProjects([]);
     }
@@ -35,7 +36,7 @@ export default function LaporanPage() {
     e.preventDefault();
 
     if (!formData.id || !formData.title || !formData.project_name) {
-      alert("Semua field wajib diisi!");
+      alertError("Field Tidak Lengkap", "Semua field harus diisi terlebih dahulu!");
       return;
     }
 
@@ -49,30 +50,40 @@ export default function LaporanPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        alert(data.detail || "Gagal menyimpan laporan");
+        alertError("Gagal Menyimpan Laporan", data.detail || "Terjadi kesalahan pada server");
         return;
       }
 
-      alert("Laporan berhasil dibuat!");
+      await alertSuccess("Laporan Berhasil Dibuat! 📊", `Laporan "${formData.title}" telah tersimpan ke database.`);
       setIsModalOpen(false);
       setFormData({ id: '', title: '', project_name: '' });
       fetchData();
     } catch (err) {
       console.error(err);
-      alert("Backend tidak terhubung. Pastikan server FastAPI berjalan.");
+      alertError("Koneksi Gagal", "Backend server tidak merespon. Pastikan server FastAPI berjalan.");
     }
   };
 
   // Hapus laporan
-  const handleDelete = async (id: string) => {
-    if (!confirm("Hapus laporan ini?")) return;
+  const handleDelete = async (id: string, title: string) => {
+    const result = await alertConfirm("Hapus Laporan?", `Apakah Anda yakin ingin menghapus laporan "${title}"?`, "Ya, Hapus");
+
+    if (!result.isConfirmed) return;
+
     try {
       const res = await fetch(`http://localhost:8000/api/v1/reports/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Gagal menghapus laporan');
+
+      if (!res.ok) {
+        const data = await res.json();
+        alertError("Gagal Menghapus", data.detail || "Terjadi kesalahan");
+        return;
+      }
+
+      await alertSuccess("Laporan Dihapus! 🗑️", `Laporan "${title}" telah dihapus dari database.`);
       fetchData();
     } catch (err) {
       console.error(err);
-      alert("Backend tidak terhubung atau laporan tidak ditemukan");
+      alertError("Koneksi Gagal", "Backend server tidak merespon atau laporan tidak ditemukan.");
     }
   };
 
@@ -120,8 +131,8 @@ export default function LaporanPage() {
                     </span>
                   </td>
                   <td className="p-4 space-x-2">
-                    <button className="text-green-600 hover:underline">View</button>
-                    <button onClick={() => handleDelete(r.id)} className="text-red-500 hover:underline">Hapus</button>
+                    <button className="text-green-600 hover:underline">📄 View</button>
+                    <button onClick={() => handleDelete(r.id, r.title)} className="text-red-500 hover:text-red-700 hover:underline">🗑️ Hapus</button>
                   </td>
                 </tr>
               ))

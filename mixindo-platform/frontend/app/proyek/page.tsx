@@ -1,12 +1,16 @@
 'use client';
+import { useRouter } from 'next/navigation';
 import React, { useEffect, useState } from 'react';
+import { alertSuccess, alertError, alertConfirm, toastSuccess } from '@/lib/alerts';
 
 export default function ProjectPage() {
   const [projects, setProjects] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [selectedId, setSelectedId] = useState(''); // ✅ ID disimpan di sini
+  const router = useRouter();
 
   const [formData, setFormData] = useState({
-    id: '',
     name: '',
     description: '',
     client_name: '',
@@ -32,30 +36,90 @@ export default function ProjectPage() {
     fetchProjects();
   }, []);
 
+  // TAMBAH
+  const handleAddClick = () => {
+    setIsEditMode(false);
+    setSelectedId('');
+    setFormData({
+      name: '',
+      description: '',
+      client_name: '',
+      start_date: '',
+      deadline: '',
+      status: 'Planning',
+      budget: 0,
+      progress: 0
+    });
+    setIsModalOpen(true);
+  };
+
+  // EDIT
+  const handleEditClick = (project: any) => {
+    setIsEditMode(true);
+    setSelectedId(project.id); // ✅ simpan ID di sini
+
+    setFormData({
+      name: project.name || '',
+      description: project.description || '',
+      client_name: project.client_name || '',
+      start_date: project.start_date || '',
+      deadline: project.deadline || '',
+      status: project.status || 'Planning',
+      budget: project.budget || 0,
+      progress: project.progress || 0
+    });
+
+    setIsModalOpen(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const url = isEditMode
+      ? `http://localhost:8000/api/v1/projects/${selectedId}`
+      : 'http://localhost:8000/api/v1/projects';
+
+    const method = isEditMode ? 'PUT' : 'POST';
+
     try {
-      const res = await fetch('http://localhost:8000/api/v1/projects', {
-        method: 'POST',
+      const res = await fetch(url, {
+        method: method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(formData), // ✅ tidak ada ID
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        alert("Error: " + data.detail);
+        alertError("Gagal Menyimpan", data.detail || "Terjadi kesalahan pada server");
         return;
       }
 
-      alert("Proyek berhasil ditambahkan!");
+      await alertSuccess(
+        isEditMode ? "Proyek Diperbarui! 🔄" : "Proyek Berhasil Ditambahkan! ✨",
+        `Proyek "${formData.name}" telah tersimpan.`
+      );
+
       setIsModalOpen(false);
       fetchProjects();
 
     } catch (error) {
-      console.error(error);
-      alert("Server tidak merespon!");
+      alertError("Koneksi Gagal", "Pastikan backend server berjalan di port 8000.");
+    }
+  };
+
+  const handleDelete = async (projectId: string, projectName: string) => {
+    const result = await alertConfirm("Hapus Proyek?", `Hapus proyek "${projectName}"?`, "Ya, Hapus");
+    if (!result.isConfirmed) return;
+
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/projects/${projectId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+
+      toastSuccess("Data berhasil dihapus");
+      fetchProjects();
+    } catch (error) {
+      alertError("Gagal Menghapus", "Terjadi kesalahan koneksi.");
     }
   };
 
@@ -66,47 +130,50 @@ export default function ProjectPage() {
     return "bg-red-100 text-red-700";
   };
 
-  const inputStyle =
-    "w-full border p-2 rounded bg-white text-gray-800 placeholder-gray-400 focus:ring-2 focus:ring-blue-400 outline-none";
+  const inputStyle = "w-full border p-2 rounded bg-white text-gray-800 focus:ring-2 focus:ring-blue-400 outline-none";
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
 
       {/* HEADER */}
-      <div className="flex justify-between mb-6">
+      <div className="flex justify-between mb-6 text-gray-800">
         <div>
           <h1 className="text-3xl font-bold text-blue-700">Daftar Proyek</h1>
-          <p className="text-gray-500 text-sm">Kelola semua proyek</p>
+          <p className="text-gray-500 text-sm">Kelola semua proyek Mixindo</p>
         </div>
-
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-xl font-bold shadow"
-        >
+        <button onClick={handleAddClick} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-xl font-bold shadow">
           + Tambah Proyek
         </button>
       </div>
 
       {/* TABLE */}
-      <div className="bg-white rounded-xl shadow border">
+      <div className="bg-white rounded-xl shadow border overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-gray-100 text-gray-700 font-semibold">
+          <thead className="bg-gray-100 text-gray-700 font-semibold text-left">
             <tr>
               <th className="p-4">ID</th>
-              <th>Nama</th>
+              <th>Nama Proyek</th>
               <th>Client</th>
               <th>Status</th>
               <th>Progress</th>
+              <th className="text-center">Aksi</th>
             </tr>
           </thead>
 
           <tbody>
             {projects.length > 0 ? (
               projects.map((p) => (
-                <tr key={p.id} className="border-b hover:bg-gray-50">
+                <tr key={p.id} className="border-b hover:bg-gray-50 text-gray-700">
                   <td className="p-4 text-blue-600 font-bold">{p.id}</td>
-                  <td className="text-gray-800 font-medium">{p.name}</td>
-                  <td className="text-gray-600">{p.client_name}</td>
+
+                  <td
+                    className="font-medium text-blue-600 cursor-pointer hover:underline"
+                    onClick={() => router.push(`/proyek/${p.id}`)}
+                  >
+                    {p.name}
+                  </td>
+
+                  <td>{p.client_name}</td>
 
                   <td>
                     <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(p.status)}`}>
@@ -115,22 +182,24 @@ export default function ProjectPage() {
                   </td>
 
                   <td className="w-[150px]">
-                    <div className="w-full bg-gray-200 h-2 rounded-full">
-                      <div
-                        className="bg-green-500 h-2 rounded-full"
-                        style={{ width: `${p.progress}%` }}
-                      />
+                    <div className="w-full bg-gray-200 h-2 rounded-full mb-1">
+                      <div className="bg-green-500 h-2 rounded-full" style={{ width: `${p.progress}%` }} />
                     </div>
                     <span className="text-xs text-gray-500">{p.progress}%</span>
+                  </td>
+
+                  <td className="p-4 text-center space-x-2">
+                    <button onClick={() => handleEditClick(p)} className="bg-amber-500 hover:bg-amber-600 active:scale-95 transition text-white px-3 py-1 rounded text-sm font-semibold">
+                      ✏️ Edit
+                    </button>
+                    <button onClick={() => handleDelete(p.id, p.name)} className="bg-red-500 hover:bg-red-600 active:scale-95 transition text-white px-3 py-1 rounded text-sm font-semibold">
+                      🗑️ Hapus
+                    </button>
                   </td>
                 </tr>
               ))
             ) : (
-              <tr>
-                <td colSpan={5} className="text-center p-6 text-gray-400">
-                  Belum ada proyek
-                </td>
-              </tr>
+              <tr><td colSpan={6} className="text-center p-6 text-gray-400">Belum ada proyek</td></tr>
             )}
           </tbody>
         </table>
@@ -138,93 +207,51 @@ export default function ProjectPage() {
 
       {/* MODAL */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4 text-gray-800">
+          <div className="bg-white p-6 rounded-2xl w-full max-w-lg shadow-2xl relative">
+            <button
+              onClick={() => setIsModalOpen(false)}
+              className="absolute top-3 right-3 text-gray-400 hover:text-red-500 text-xl font-bold"
+              >
+                ✕
+            </button>
 
-          <div className="bg-white p-6 rounded-2xl w-full max-w-lg shadow-2xl">
-
-            <h2 className="text-xl font-bold text-gray-800 border-b pb-2 mb-4">
-              Tambah Proyek Baru
+            <h2 className="text-xl font-bold mb-4">
+              {isEditMode ? "Edit Proyek" : "Tambah Proyek"}
             </h2>
 
-            <form onSubmit={handleSubmit} className="space-y-4 text-sm">
+            <form onSubmit={handleSubmit} className="space-y-3">
 
-              <p className="font-semibold text-blue-600">Informasi Proyek</p>
-
-              <input
-                placeholder="ID Proyek"
-                className={inputStyle}
-                onChange={e => setFormData({ ...formData, id: e.target.value })}
-              />
-
-              <input
-                placeholder="Nama Proyek"
-                className={inputStyle}
+              <input placeholder="Nama Proyek" className={inputStyle}
+                value={formData.name}
                 onChange={e => setFormData({ ...formData, name: e.target.value })}
+                required
               />
 
-              <textarea
-                placeholder="Deskripsi"
-                className={inputStyle}
+              <textarea placeholder="Deskripsi" className={inputStyle}
+                value={formData.description}
                 onChange={e => setFormData({ ...formData, description: e.target.value })}
               />
 
-              <input
-                placeholder="Client"
-                className={inputStyle}
+              <input placeholder="Client" className={inputStyle}
+                value={formData.client_name}
                 onChange={e => setFormData({ ...formData, client_name: e.target.value })}
               />
 
-              <p className="font-semibold text-green-600">Manajemen</p>
-
-              <select
-                className={inputStyle}
-                onChange={e => setFormData({ ...formData, status: e.target.value })}
-              >
-                <option>Planning</option>
-                <option>In Progress</option>
-                <option>Completed</option>
-                <option>Cancelled</option>
-              </select>
-
-              <input
-                type="number"
-                placeholder="Budget"
-                className={inputStyle}
-                onChange={e => setFormData({ ...formData, budget: Number(e.target.value) })}
-              />
-
-              <p className="font-semibold text-purple-600">Waktu</p>
-
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  type="date"
-                  className={inputStyle}
+              <div className="grid grid-cols-2 gap-2">
+                <input type="date" className={inputStyle}
+                  value={formData.start_date}
                   onChange={e => setFormData({ ...formData, start_date: e.target.value })}
                 />
-
-                <input
-                  type="date"
-                  className={inputStyle}
+                <input type="date" className={inputStyle}
+                  value={formData.deadline}
                   onChange={e => setFormData({ ...formData, deadline: e.target.value })}
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-gray-500 hover:text-black"
-                >
-                  Batal
-                </button>
-
-                <button
-                  type="submit"
-                  className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-xl font-bold"
-                >
-                  Simpan
-                </button>
-              </div>
+              <button type="submit" className="bg-blue-600 text-white w-full py-2 rounded">
+                {isEditMode ? "Update" : "Tambah"}
+              </button>
 
             </form>
           </div>

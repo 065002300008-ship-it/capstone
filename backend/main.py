@@ -4,6 +4,7 @@ from sqlalchemy import create_engine, Column, String, Integer, Date, DateTime, T
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from datetime import datetime, date
 from pydantic import BaseModel
+import uuid
 
 # ================= DATABASE =================
 DATABASE_URL = "mysql+pymysql://root:@127.0.0.1:3306/mixindo_db"
@@ -16,7 +17,7 @@ Base = declarative_base()
 class Project(Base):
     __tablename__ = "projects"
 
-    id = Column(String(100), primary_key=True)
+    id = Column(String(100), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255))
     description = Column(Text)
     client_name = Column(String(255))
@@ -33,8 +34,11 @@ class Project(Base):
 class Task(Base):
     __tablename__ = "tasks"
 
-    id = Column(String(100), primary_key=True)
-    project_id = Column(String(100), ForeignKey("projects.id"))
+    id = Column(String(100), primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(
+    String(100),
+    ForeignKey("projects.id", ondelete="CASCADE")
+)
     title = Column(String(255))
     status = Column(String(50), default="Pending")
 
@@ -65,7 +69,6 @@ def get_db():
 
 # ================= SCHEMA =================
 class ProjectCreate(BaseModel):
-    id: str
     name: str
     description: str
     client_name: str
@@ -84,7 +87,6 @@ class ProjectUpdate(BaseModel):
 
 
 class TaskCreate(BaseModel):
-    id: str
     project_id: str
     title: str
 
@@ -93,13 +95,27 @@ class TaskUpdate(BaseModel):
     status: str
 
 
+# ================= HELPER =================
+def serialize_project(project: Project):
+    return {
+        "id": project.id,
+        "name": project.name,
+        "description": project.description,
+        "client_name": project.client_name,
+        "start_date": str(project.start_date) if project.start_date else None,
+        "deadline": str(project.deadline) if project.deadline else None,
+        "status": project.status,
+        "budget": project.budget,
+        "progress": project.progress
+    }
+
+
 # ================= LOGIC =================
 def update_project_progress(project_id: str, db: Session):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         return
 
-    # PRIORITAS: kalau completed → 100%
     if project.status == "Completed":
         project.progress = 100
         db.commit()
@@ -117,11 +133,26 @@ def update_project_progress(project_id: str, db: Session):
 
 
 # ================= PROJECT =================
+
+# GET ALL
 @app.get("/api/v1/projects")
 def get_projects(db: Session = Depends(get_db)):
-    return db.query(Project).all()
+    projects = db.query(Project).all()
+    return [serialize_project(p) for p in projects]
 
 
+# ✅ GET DETAIL (FIX UTAMA)
+@app.get("/api/v1/projects/{project_id}")
+def get_project(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project tidak ditemukan")
+
+    return serialize_project(project)
+
+
+# CREATE (ID AUTO)
 @app.post("/api/v1/projects")
 def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
     try:
@@ -129,12 +160,13 @@ def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
         db.add(new_project)
         db.commit()
         db.refresh(new_project)
-        return new_project
+        return serialize_project(new_project)
     except Exception as e:
         print("ERROR:", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# UPDATE
 @app.put("/api/v1/projects/{project_id}")
 def update_project(project_id: str, data: ProjectUpdate, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -155,6 +187,7 @@ def update_project(project_id: str, data: ProjectUpdate, db: Session = Depends(g
     return {"message": "Project berhasil diupdate"}
 
 
+# DELETE
 @app.delete("/api/v1/projects/{project_id}")
 def delete_project(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -169,6 +202,7 @@ def delete_project(project_id: str, db: Session = Depends(get_db)):
 
 
 # ================= TASK =================
+
 @app.post("/api/v1/tasks")
 def create_task(task: TaskCreate, db: Session = Depends(get_db)):
     try:
@@ -197,3 +231,20 @@ def update_task(task_id: str, data: TaskUpdate, db: Session = Depends(get_db)):
     update_project_progress(task.project_id, db)
 
     return {"message": "Task berhasil diupdate"}
+
+@app.get("/api/v1/projects/{project_id}/tasks")
+def get_tasks_by_project(project_id: str, db: Session = Depends(get_db)):
+    tasks = db.query(Task).filter(Task.project_id == project_id).all()
+
+    return [
+        {
+            "id": t.id,
+            "title": t.title,
+            "status": t.status
+        }
+        for t in tasks
+    ]
+
+@app.get("/api/v1/tests")
+def get_tests():
+    return []

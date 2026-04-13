@@ -1,8 +1,9 @@
 'use client';
 import React, { useEffect, useState } from 'react';
+import { alertSuccess, alertError, alertConfirm } from '@/lib/alerts';
 
 export default function UserManagementPage() {
-  const [users, setUsers] = useState([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -32,12 +33,35 @@ export default function UserManagementPage() {
     });
 
     if (res.ok) {
-      alert("User Berhasil Ditambahkan ke Database!");
+      await alertSuccess("User Berhasil Ditambahkan! 👤", `User "${formData.full_name}" telah ditambahkan ke database.`);
       setIsModalOpen(false);
+      setFormData({ id: '', full_name: '', email: '', role: 'Engineer', department: 'QA/QC' });
       fetchUsers();
     } else {
       const error = await res.json();
-      alert("Gagal: " + error.detail);
+      alertError("Gagal Menambahkan User", error.detail || "Terjadi kesalahan");
+    }
+  };
+
+  const handleDelete = async (userId: string, userName: string) => {
+    const result = await alertConfirm("Hapus User?", `Apakah Anda yakin ingin menghapus user "${userName}"?`, "Ya, Hapus");
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/users/${userId}`, { method: 'DELETE' });
+
+      if (!res.ok) {
+        const data = await res.json();
+        alertError("Gagal Menghapus", data.detail || "Terjadi kesalahan");
+        return;
+      }
+
+      await alertSuccess("User Dihapus! 🗑️", `User "${userName}" telah dihapus dari database.`);
+      fetchUsers();
+    } catch (error) {
+      console.error(error);
+      alertError("Koneksi Gagal", "Backend server tidak merespon.");
     }
   };
 
@@ -81,11 +105,11 @@ export default function UserManagementPage() {
                 </td>
                 <td className="px-6 py-4">{u.department}</td>
                 <td className="px-6 py-4 text-center">
-                  <button 
-                    onClick={async () => { if(confirm('Hapus user ini?')) { await fetch(`http://localhost:8000/api/v1/users/${u.id}`, {method: 'DELETE'}); fetchUsers(); } }}
-                    className="text-red-500 hover:text-red-700 font-medium"
+                  <button
+                    onClick={() => handleDelete(u.id, u.full_name)}
+                    className="text-red-500 hover:text-red-700 font-medium hover:bg-red-50 px-3 py-1 rounded transition"
                   >
-                    Hapus
+                    🗑️ Hapus
                   </button>
                 </td>
               </tr>
