@@ -1,9 +1,10 @@
 'use client';
 import React, { useEffect, useState } from 'react';
+import { alertSuccess, alertError, alertConfirm } from '@/lib/alerts';
 
 export default function PengujianPage() {
-  const [tests, setTests] = useState([]);
-  const [projects, setProjects] = useState([]);
+  const [tests, setTests] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -40,19 +41,43 @@ export default function PengujianPage() {
       });
 
       const data = await res.json();
+      setTests(Array.isArray(data) ? data : []);
 
       if (!res.ok) {
-        alert(data.detail || "Gagal menyimpan");
+        alertError("Gagal Menyimpan Pengujian", data.detail || "Terjadi kesalahan pada server");
         return;
       }
 
-      alert("Data berhasil disimpan!");
+      await alertSuccess("Pengujian Berhasil Disimpan! ✨", `Pengujian untuk proyek "${formData.project_name}" telah ditambahkan.`);
       setIsModalOpen(false);
       setFormData({ id: '', project_name: '', test_type: '', test_date: '' });
       fetchData();
 
     } catch (err) {
-      alert("Backend tidak terhubung");
+      console.error(err);
+      alertError("Koneksi Gagal", "Backend server tidak terhubung. Pastikan server berjalan di port 8000.");
+    }
+  };
+
+  const handleDelete = async (testId: string, projectName: string) => {
+    const result = await alertConfirm("Hapus Pengujian?", `Apakah Anda yakin ingin menghapus pengujian untuk proyek "${projectName}"?`, "Ya, Hapus");
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const res = await fetch(`http://localhost:8000/api/v1/tests/${testId}`, { method: 'DELETE' });
+
+      if (!res.ok) {
+        const data = await res.json();
+        alertError("Gagal Menghapus", data.detail || "Terjadi kesalahan");
+        return;
+      }
+
+      await alertSuccess("Pengujian Dihapus! 🗑️", "Data pengujian telah berhasil dihapus dari database.");
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      alertError("Koneksi Gagal", "Backend server tidak merespon.");
     }
   };
 
@@ -81,18 +106,19 @@ export default function PengujianPage() {
               <th className="p-4 text-left">ID</th>
               <th className="p-4 text-left">Proyek</th>
               <th className="p-4 text-left">Jenis Uji</th>
+              <th className="p-4 text-center">Aksi</th>
             </tr>
           </thead>
 
           <tbody>
             {tests.length === 0 ? (
               <tr>
-                <td colSpan={3} className="text-center p-6 text-gray-500">
+                <td colSpan={4} className="text-center p-6 text-gray-500">
                   Belum ada data
                 </td>
               </tr>
             ) : (
-              tests.map((t: any) => (
+              Array.isArray(tests) && tests.map((t: any) => (
                 <tr
                   key={t.id}
                   className="border-t hover:bg-gray-50 transition"
@@ -100,6 +126,14 @@ export default function PengujianPage() {
                   <td className="p-4 font-semibold text-gray-800">{t.id}</td>
                   <td className="p-4 text-gray-700">{t.project_name}</td>
                   <td className="p-4 text-gray-700">{t.test_type}</td>
+                  <td className="p-4 text-center">
+                    <button
+                      onClick={() => handleDelete(t.id, t.project_name)}
+                      className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm font-semibold transition"
+                    >
+                      🗑️ Hapus
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
