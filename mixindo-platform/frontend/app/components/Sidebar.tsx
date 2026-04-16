@@ -14,9 +14,6 @@ export default function Sidebar() {
         <Link href="/proyek" className="block p-3 hover:bg-blue-800 rounded-lg text-sm font-medium transition-colors">
           Proyek
         </Link>
-        <Link href="/pengujian" className="block p-3 hover:bg-blue-800 rounded-lg text-sm font-medium transition-colors">
-          Pengujian / Hasil Uji
-        </Link>
         <Link href="/laporan" className="block p-3 hover:bg-blue-800 rounded-lg text-sm font-medium transition-colors">
           Laporan
         </Link>

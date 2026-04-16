@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { alertSuccess, alertError, alertConfirm, toastSuccess } from '@/lib/alerts';
 
 export default function ProjectPage() {
+  const [search, setSearch] = useState('');
   const [projects, setProjects] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -132,19 +133,46 @@ export default function ProjectPage() {
 
   const inputStyle = "w-full border p-2 rounded bg-white text-gray-800 focus:ring-2 focus:ring-blue-400 outline-none";
 
+  const filteredProjects = projects.filter((p) =>
+  p.name.toLowerCase().includes(search.toLowerCase()) ||
+  p.client_name.toLowerCase().includes(search.toLowerCase()) ||
+  p.project_code.toLowerCase().includes(search.toLowerCase())
+);
+
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
 
       {/* HEADER */}
-      <div className="flex justify-between mb-6 text-gray-800">
-        <div>
-          <h1 className="text-3xl font-bold text-blue-700">Daftar Proyek</h1>
-          <p className="text-gray-500 text-sm">Kelola semua proyek Mixindo</p>
-        </div>
-        <button onClick={handleAddClick} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-xl font-bold shadow">
-          + Tambah Proyek
-        </button>
-      </div>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 text-gray-800">
+
+  {/* LEFT SIDE */}
+  <div className="w-full">
+    <h1 className="text-3xl font-bold text-blue-700">Daftar Proyek</h1>
+    <p className="text-gray-500 text-sm mb-3">Kelola semua proyek Mixindo</p>
+
+    {/* SEARCH */}
+    <div className="w-full md:w-[400px]">
+      <input
+        type="text"
+        placeholder="🔍 Cari nama proyek / kode proyek..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="w-full border px-4 py-2 rounded-xl shadow-sm 
+                   focus:ring-2 focus:ring-blue-400 outline-none
+                   transition-all duration-200"
+      />
+    </div>
+  </div>
+
+  {/* RIGHT SIDE */}
+  <button
+    onClick={handleAddClick}
+    className="bg-green-600 hover:bg-green-700 text-white px-5 py-3 rounded-xl font-bold shadow h-fit"
+  >
+    + Tambah Proyek
+  </button>
+
+</div>
 
       {/* TABLE */}
       <div className="bg-white rounded-xl shadow border overflow-hidden">
@@ -161,47 +189,65 @@ export default function ProjectPage() {
           </thead>
 
           <tbody>
-            {projects.length > 0 ? (
-              projects.map((p) => (
-                <tr key={p.id} className="border-b hover:bg-gray-50 text-gray-700">
-                  <td className="p-4 text-blue-600 font-bold">{p.id}</td>
+  {filteredProjects.length > 0 ? (
+    filteredProjects.map((p) => (
+      <tr key={p.id} className="border-b hover:bg-gray-50 text-gray-700">
+        
+        <td className="p-4 text-blue-600 font-bold">
+          {p.project_code}
+        </td>
 
-                  <td
-                    className="font-medium text-blue-600 cursor-pointer hover:underline"
-                    onClick={() => router.push(`/proyek/${p.id}`)}
-                  >
-                    {p.name}
-                  </td>
+        <td
+          className="font-medium text-blue-600 cursor-pointer hover:underline"
+          onClick={() => router.push(`/proyek/${p.id}`)}
+        >
+          {p.name}
+        </td>
 
-                  <td>{p.client_name}</td>
+        <td>{p.client_name}</td>
 
-                  <td>
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(p.status)}`}>
-                      {p.status}
-                    </span>
-                  </td>
+        <td>
+          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(p.status)}`}>
+            {p.status}
+          </span>
+        </td>
 
-                  <td className="w-[150px]">
-                    <div className="w-full bg-gray-200 h-2 rounded-full mb-1">
-                      <div className="bg-green-500 h-2 rounded-full" style={{ width: `${p.progress}%` }} />
-                    </div>
-                    <span className="text-xs text-gray-500">{p.progress}%</span>
-                  </td>
+        <td className="w-[150px]">
+          <div className="w-full bg-gray-200 h-2 rounded-full mb-1">
+            <div
+              className="bg-green-500 h-2 rounded-full transition-all duration-500"
+              style={{ width: `${p.progress}%` }}
+            />
+          </div>
+          <span className="text-xs text-gray-500">{p.progress}%</span>
+        </td>
 
-                  <td className="p-4 text-center space-x-2">
-                    <button onClick={() => handleEditClick(p)} className="bg-amber-500 hover:bg-amber-600 active:scale-95 transition text-white px-3 py-1 rounded text-sm font-semibold">
-                      ✏️ Edit
-                    </button>
-                    <button onClick={() => handleDelete(p.id, p.name)} className="bg-red-500 hover:bg-red-600 active:scale-95 transition text-white px-3 py-1 rounded text-sm font-semibold">
-                      🗑️ Hapus
-                    </button>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr><td colSpan={6} className="text-center p-6 text-gray-400">Belum ada proyek</td></tr>
-            )}
-          </tbody>
+        <td className="p-4 text-center space-x-2">
+          <button
+            onClick={() => handleEditClick(p)}
+            className="bg-amber-500 hover:bg-amber-600 active:scale-95 transition text-white px-3 py-1 rounded text-sm font-semibold"
+          >
+            ✏️ Edit
+          </button>
+
+          <button
+            onClick={() => handleDelete(p.id, p.name)}
+            className="bg-red-500 hover:bg-red-600 active:scale-95 transition text-white px-3 py-1 rounded text-sm font-semibold"
+          >
+            🗑️ Hapus
+          </button>
+        </td>
+
+      </tr>
+    ))
+  ) : (
+    <tr>
+      <td colSpan={6} className="text-center p-6 text-gray-400 italic">
+        🔍 Tidak ada proyek ditemukan
+      </td>
+    </tr>
+  )}
+</tbody>
         </table>
       </div>
 
