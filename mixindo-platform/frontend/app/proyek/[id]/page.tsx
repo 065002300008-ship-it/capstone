@@ -12,11 +12,20 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<any>(null);
   const [tasks, setTasks] = useState<any[]>([]);
   const [filter, setFilter] = useState('All');
-  const [newTask, setNewTask] = useState('');
+const [newTask, setNewTask] = useState({
+    title: '',
+    description: '',
+    progress: 0,
+    deadline: ''
+  });
 
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editStatus, setEditStatus] = useState('');
+
+  const [editDescription, setEditDescription] = useState('');
+const [editProgress, setEditProgress] = useState(0);
+const [editDeadline, setEditDeadline] = useState('');
 
   const fetchData = async () => {
     try {
@@ -39,27 +48,40 @@ export default function ProjectDetailPage() {
 
   // ================= ADD =================
   const handleAddTask = async () => {
-    if (!newTask) return;
+  if (!newTask.title) return;
 
-    await fetch(`http://localhost:8000/api/v1/tasks`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        project_id: id,
-        title: newTask
-      })
-    });
+  await fetch(`http://localhost:8000/api/v1/tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      project_id: id,
+      title: newTask.title,
+      description: newTask.description,
+      progress: newTask.progress,
+      deadline: newTask.deadline || null
+    })
+  });
 
-    setNewTask('');
-    fetchData();
-  };
+  setNewTask({
+    title: '',
+    description: '',
+    progress: 0,
+    deadline: ''
+  });
+
+  fetchData();
+};
 
   // ================= START EDIT =================
   const startEdit = (task: any) => {
-    setEditingTaskId(task.id);
-    setEditTitle(task.title);
-    setEditStatus(task.status);
-  };
+  setEditingTaskId(task.id);
+  setEditTitle(task.title);
+  setEditStatus(task.status);
+
+  setEditDescription(task.description || '');
+  setEditProgress(task.progress || 0);
+  setEditDeadline(task.deadline || '');
+};
 
   // ================= SAVE EDIT =================
   const handleSaveEdit = async () => {
@@ -77,9 +99,12 @@ export default function ProjectDetailPage() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title: editTitle,
-        status: editStatus
-      })
+  title: editTitle,
+  description: editDescription,
+  progress: editProgress,
+  deadline: editDeadline,
+  status: editStatus
+})
     });
 
     setEditingTaskId(null);
@@ -117,16 +142,16 @@ export default function ProjectDetailPage() {
   if (!project) return <div className="p-6">Loading...</div>;
 
   const filteredTasks = tasks
-  .filter((t) => {
-    const matchFilter = filter === 'All' || t.status === filter;
-    const matchSearch = t.title.toLowerCase().includes(search.toLowerCase());
-    return matchFilter && matchSearch;
-  })
-  .sort((a, b) => {
-    if (a.status === 'Done' && b.status !== 'Done') return 1;
-    if (a.status !== 'Done' && b.status === 'Done') return -1;
-    return 0;
-  });
+    .filter((t) => {
+      const matchFilter = filter === 'All' || t.status === filter;
+      const matchSearch = t.title.toLowerCase().includes(search.toLowerCase());
+      return matchFilter && matchSearch;
+    })
+    .sort((a, b) => {
+      if (a.status === 'Done' && b.status !== 'Done') return 1;
+      if (a.status !== 'Done' && b.status === 'Done') return -1;
+      return 0;
+    });
 
   const total = tasks.length;
   const done = tasks.filter(t => t.status === 'Done').length;
@@ -149,12 +174,16 @@ export default function ProjectDetailPage() {
         ← Kembali
       </button>
 
+      {/* DOWNLOAD LAPORAN */}
       <button
-  onClick={() => window.open(`http://localhost:8000/api/v1/projects/${project.project_code}/report`)}
-  className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded"
->
-  📄 Download Laporan
-</button>
+        onClick={() =>
+          window.open(`http://localhost:8000/api/v1/projects/${project.id}/report`)
+        }
+        className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg shadow fixed right-11 z-50"
+        
+      >
+        📄 Download Laporan
+      </button>
 
       {/* HEADER */}
       <h1 className="text-3xl font-bold text-blue-700">
@@ -194,110 +223,139 @@ export default function ProjectDetailPage() {
 
       <div className="bg-white p-4 rounded-xl shadow mb-6">
 
-  <h3 className="text-md font-semibold mb-3">Statistik Pengujian</h3>
+        <h3 className="text-md font-semibold mb-3">Statistik Pengujian</h3>
 
-  {/* Pending */}
-  <div className="mb-2">
-    <div className="flex justify-between text-xs mb-1">
-      <span>Pending</span>
-      <span>{pendingCount}</span>
-    </div>
-    <div className="w-full bg-gray-200 h-3 rounded">
-      <div
-        className="bg-gray-500 h-3 rounded transition-all duration-500"
-        style={{ width: `${(pendingCount / maxValue) * 100}%` }}
-      />
-    </div>
-  </div>
+        {/* Pending */}
+        <div className="mb-2">
+          <div className="flex justify-between text-xs mb-1">
+            <span>Pending</span>
+            <span>{pendingCount}</span>
+          </div>
+          <div className="w-full bg-gray-200 h-3 rounded">
+            <div
+              className="bg-gray-500 h-3 rounded transition-all duration-500"
+              style={{ width: `${(pendingCount / maxValue) * 100}%` }}
+            />
+          </div>
+        </div>
 
-  {/* In Progress */}
-  <div className="mb-2">
-    <div className="flex justify-between text-xs mb-1">
-      <span>In Progress</span>
-      <span>{progressCount}</span>
-    </div>
-    <div className="w-full bg-gray-200 h-3 rounded">
-      <div
-        className="bg-blue-500 h-3 rounded transition-all duration-500"
-        style={{ width: `${(progressCount / maxValue) * 100}%` }}
-      />
-    </div>
-  </div>
+        {/* In Progress */}
+        <div className="mb-2">
+          <div className="flex justify-between text-xs mb-1">
+            <span>In Progress</span>
+            <span>{progressCount}</span>
+          </div>
+          <div className="w-full bg-gray-200 h-3 rounded">
+            <div
+              className="bg-blue-500 h-3 rounded transition-all duration-500"
+              style={{ width: `${(progressCount / maxValue) * 100}%` }}
+            />
+          </div>
+        </div>
 
-  {/* Done */}
-  <div>
-    <div className="flex justify-between text-xs mb-1">
-      <span>Done</span>
-      <span>{doneCount}</span>
-    </div>
-    <div className="w-full bg-gray-200 h-3 rounded">
-      <div
-        className="bg-green-500 h-3 rounded transition-all duration-500"
-        style={{ width: `${(doneCount / maxValue) * 100}%` }}
-      />
-    </div>
-  </div>
+        {/* Done */}
+        <div>
+          <div className="flex justify-between text-xs mb-1">
+            <span>Done</span>
+            <span>{doneCount}</span>
+          </div>
+          <div className="w-full bg-gray-200 h-3 rounded">
+            <div
+              className="bg-green-500 h-3 rounded transition-all duration-500"
+              style={{ width: `${(doneCount / maxValue) * 100}%` }}
+            />
+          </div>
+        </div>
 
-</div>
-
-
+      </div>
 
       <div className="bg-white p-6 rounded-xl shadow mt-6">
 
         <h2 className="text-xl font-bold mb-4">Pengujian</h2>
         <div className="mb-4">
-  <input
-    type="text"
-    placeholder="Cari pengujian..."
-    value={search}
-    onChange={(e) => setSearch(e.target.value)}
-    className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-400 outline-none"
-  />
-</div>
+          <input
+            type="text"
+            placeholder="Cari pengujian..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-400 outline-none"
+          />
+        </div>
         <div className="flex gap-4 mb-4 text-sm">
-  <div className="bg-gray-100 px-3 py-2 rounded">
-    Total: <b>{total}</b>
-  </div>
+          <div className="bg-gray-100 px-3 py-2 rounded">
+            Total: <b>{total}</b>
+          </div>
 
-  <div className="bg-green-100 text-green-700 px-3 py-2 rounded">
-    Done: <b>{done}</b>
-  </div>
+          <div className="bg-green-100 text-green-700 px-3 py-2 rounded">
+            Done: <b>{done}</b>
+          </div>
 
-  <div className="bg-yellow-100 text-yellow-700 px-3 py-2 rounded">
-    Pending: <b>{pending}</b>
-  </div>
-</div>
-<div className="flex gap-2 mb-4">
-  {['All', 'Pending', 'In Progress', 'Done'].map((f) => (
-    <button
-      key={f}
-      onClick={() => setFilter(f)}
-      className={`px-3 py-1 rounded text-sm ${
-        filter === f
-          ? 'bg-blue-600 text-white'
-          : 'bg-gray-200 hover:bg-gray-300'
-      }`}
-    >
-      {f}
-    </button>
-  ))}
-</div>
+          <div className="bg-yellow-100 text-yellow-700 px-3 py-2 rounded">
+            Pending: <b>{pending}</b>
+          </div>
+        </div>
+        <div className="flex gap-2 mb-4">
+          {['All', 'Pending', 'In Progress', 'Done'].map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-3 py-1 rounded text-sm ${
+                filter === f
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 hover:bg-gray-300'
+              }`}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
 
         {/* ADD */}
-        <div className="flex gap-2 mb-4">
-          <input
-            value={newTask}
-            onChange={(e) => setNewTask(e.target.value)}
-            placeholder="Tambah pengujian..."
-            className="border p-2 flex-1 rounded focus:ring-2 focus:ring-blue-400 outline-none"
-          />
-          <button
-            onClick={handleAddTask}
-            className="bg-green-600 hover:bg-green-700 text-white px-4 rounded"
-          >
-            Tambah
-          </button>
-        </div>
+        <div className="bg-gray-50 p-4 rounded-lg mb-4 space-y-3">
+
+  <input
+    value={newTask.title}
+    onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+    placeholder="Judul pengujian..."
+    className="w-full border p-2 rounded"
+  />
+
+  <textarea
+    value={newTask.description}
+    onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
+    placeholder="Deskripsi..."
+    className="w-full border p-2 rounded"
+  />
+
+  <div className="grid grid-cols-2 gap-2">
+    <input
+      type="number"
+      value={newTask.progress}
+      onChange={(e) =>
+        setNewTask({ ...newTask, progress: Number(e.target.value) })
+      }
+      placeholder="Progress (%)"
+      className="border p-2 rounded"
+    />
+
+    <input
+      type="date"
+      value={newTask.deadline}
+      onChange={(e) =>
+        setNewTask({ ...newTask, deadline: e.target.value })
+      }
+      className="border p-2 rounded"
+    />
+  </div>
+
+  <button
+    onClick={handleAddTask}
+    className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded font-semibold"
+  >
+    + Tambah Pengujian
+  </button>
+
+</div>
 
         {/* LIST */}
         {tasks.length === 0 ? (
@@ -312,6 +370,28 @@ export default function ProjectDetailPage() {
                 >
                   {editingTaskId === t.id ? (
                     <>
+
+                      <input
+  value={editDescription}
+  onChange={(e) => setEditDescription(e.target.value)}
+  placeholder="Deskripsi"
+  className="border p-1 rounded"
+/>
+
+<input
+  type="number"
+  value={editProgress}
+  onChange={(e) => setEditProgress(Number(e.target.value))}
+  className="border p-1 rounded w-20"
+/>
+
+<input
+  type="date"
+  value={editDeadline}
+  onChange={(e) => setEditDeadline(e.target.value)}
+  className="border p-1 rounded"
+/>
+
                       <input
                         value={editTitle}
                         onChange={(e) => setEditTitle(e.target.value)}
@@ -338,11 +418,20 @@ export default function ProjectDetailPage() {
                   ) : (
                     <>
                       <div>
-                        <p className="font-medium">{t.title}</p>
-                        <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(t.status)}`}>
-                          {t.status}
-                        </span>
-                      </div>
+  <p className="font-medium">{t.title}</p>
+
+  <p className="text-xs text-gray-500">
+    {t.description || '-'}
+  </p>
+
+  <p className="text-xs text-gray-400">
+    Progress: {t.progress || 0}% | Deadline: {t.deadline || '-'}
+  </p>
+
+  <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(t.status)}`}>
+    {t.status}
+  </span>
+</div>
 
                       <div className="flex gap-3 items-center">
                         <button

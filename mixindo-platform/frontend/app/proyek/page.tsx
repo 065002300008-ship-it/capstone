@@ -29,6 +29,7 @@ export default function ProjectPage() {
       setProjects(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Fetch error:", error);
+      console.log("DATA PROJECT:", projects);
       setProjects([]);
     }
   };
@@ -133,11 +134,14 @@ export default function ProjectPage() {
 
   const inputStyle = "w-full border p-2 rounded bg-white text-gray-800 focus:ring-2 focus:ring-blue-400 outline-none";
 
-  const filteredProjects = projects.filter((p) =>
-  p.name.toLowerCase().includes(search.toLowerCase()) ||
-  p.client_name.toLowerCase().includes(search.toLowerCase()) ||
-  p.project_code.toLowerCase().includes(search.toLowerCase())
-);
+  const filteredProjects = projects.filter((p) => {
+  if (!search) return true;
+
+  return (
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    p.project_code.toLowerCase().includes(search.toLowerCase())
+  );
+});
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
@@ -223,20 +227,38 @@ export default function ProjectPage() {
         </td>
 
         <td className="p-4 text-center space-x-2">
-          <button
-            onClick={() => handleEditClick(p)}
-            className="bg-amber-500 hover:bg-amber-600 active:scale-95 transition text-white px-3 py-1 rounded text-sm font-semibold"
-          >
-            ✏️ Edit
-          </button>
 
-          <button
-            onClick={() => handleDelete(p.id, p.name)}
-            className="bg-red-500 hover:bg-red-600 active:scale-95 transition text-white px-3 py-1 rounded text-sm font-semibold"
-          >
-            🗑️ Hapus
-          </button>
-        </td>
+  <button
+    onClick={() => router.push(`/proyek/${p.id}`)}
+    className="bg-blue-600 hover:bg-blue-700 active:scale-95 transition text-white px-3 py-1 rounded text-sm font-semibold"
+  >
+    🔍 Detail
+  </button>
+
+  <button
+    onClick={() => handleEditClick(p)}
+    className="bg-amber-500 hover:bg-amber-600 active:scale-95 transition text-white px-3 py-1 rounded text-sm font-semibold"
+  >
+    ✏️ Edit
+  </button>
+
+  <button
+    onClick={() => handleDelete(p.id, p.name)}
+    className="bg-red-500 hover:bg-red-600 active:scale-95 transition text-white px-3 py-1 rounded text-sm font-semibold"
+  >
+    🗑️ Hapus
+  </button>
+
+  <button
+    onClick={() => {
+      window.open(`http://localhost:8000/api/v1/projects/${p.id}/report`, '_blank');
+    }}
+    className="bg-purple-600 hover:bg-purple-700 active:scale-95 transition text-white px-3 py-1 rounded text-sm font-semibold"
+  >
+    📄 Laporan
+  </button>
+
+</td>
 
       </tr>
     ))

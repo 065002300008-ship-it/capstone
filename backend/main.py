@@ -6,6 +6,7 @@ from datetime import datetime, date
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 from io import BytesIO
+from typing import Optional
 import uuid
 import random
 import string
@@ -57,8 +58,11 @@ class Task(Base):
     )
 
     title = Column(String(255))
-    status = Column(String(50), default="Pending")
+    description = Column(Text, nullable=True)   # ✅ BARU
+    progress = Column(Integer, default=0)       # ✅ BARU
+    deadline = Column(Date, nullable=True)      # ✅ BARU
 
+    status = Column(String(50), default="Pending")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -105,10 +109,16 @@ class ProjectUpdate(BaseModel):
 class TaskCreate(BaseModel):
     project_id: str
     title: str
+    description: Optional[str] = None
+    progress: int = 0
+    deadline: Optional[date] = None
 
 
 class TaskUpdate(BaseModel):
     title: str
+    description: Optional[str] = None
+    progress: int
+    deadline: Optional[date] = None
     status: str
 
 # ================= SERIALIZER =================
@@ -246,6 +256,9 @@ def update_task(task_id: str, data: TaskUpdate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Pengujian tidak ditemukan")
 
     task.title = data.title
+    task.description = data.description
+    task.progress = data.progress
+    task.deadline = data.deadline
     task.status = data.status
 
     db.commit()
@@ -276,13 +289,16 @@ def get_tasks_by_project(project_id: str, db: Session = Depends(get_db)):
     tasks = db.query(Task).filter(Task.project_id == project_id).all()
 
     return [
-        {
-            "id": t.id,
-            "title": t.title,
-            "status": t.status
-        }
-        for t in tasks
-    ]
+    {
+        "id": t.id,
+        "title": t.title,
+        "description": t.description,
+        "progress": t.progress,
+        "deadline": str(t.deadline) if t.deadline else None,
+        "status": t.status
+    }
+    for t in tasks
+]
 
 @app.get("/api/v1/projects/{project_id}/report")
 def generate_report(project_id: str, db: Session = Depends(get_db)):
