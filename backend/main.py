@@ -134,7 +134,7 @@ def update_project_progress(project_id: str, db: Session):
     if not project:
         return
 
-    tasks = db.query(Task).filter(Task.project_id == project_id).all()
+    tasks = db.query(Task).filter(Task.project_id == project.id).all()
 
     # ===== HITUNG PROGRESS =====
     if len(tasks) == 0:
@@ -287,6 +287,7 @@ def get_tasks_by_project(project_id: str, db: Session = Depends(get_db)):
 @app.get("/api/v1/projects/{project_id}/report")
 def generate_report(project_id: str, db: Session = Depends(get_db)):
     try:
+        # ✅ SUPPORT ID + PROJECT CODE
         project = db.query(Project).filter(
             (Project.id == project_id) | (Project.project_code == project_id)
         ).first()
@@ -296,26 +297,39 @@ def generate_report(project_id: str, db: Session = Depends(get_db)):
 
         tasks = db.query(Task).filter(Task.project_id == project.id).all()
 
-        buffer = BytesIO()
+        # ================= PDF =================
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
 
+        buffer = BytesIO()
         doc = SimpleDocTemplate(buffer)
         styles = getSampleStyleSheet()
         elements = []
 
+        # HEADER
         elements.append(Paragraph("<b>LAPORAN PROYEK</b>", styles['Title']))
         elements.append(Spacer(1, 10))
 
-        elements.append(Paragraph(f"Nama: {project.name or '-'}", styles['Normal']))
+        elements.append(Paragraph(f"Nama: {project.name}", styles['Normal']))
         elements.append(Paragraph(f"Kode: {project.project_code}", styles['Normal']))
-        elements.append(Paragraph(f"Client: {project.client_name or '-'}", styles['Normal']))
+        elements.append(Paragraph(f"Client: {project.client_name}", styles['Normal']))
         elements.append(Paragraph(f"Status: {project.status}", styles['Normal']))
         elements.append(Paragraph(f"Progress: {project.progress}%", styles['Normal']))
+        elements.append(Paragraph(f"Start Date: {project.start_date}", styles['Normal']))
+        elements.append(Paragraph(f"Deadline: {project.deadline}", styles['Normal']))
+        elements.append(Paragraph(f"Deskripsi: {project.description or '-'}", styles['Normal']))
 
+        elements.append(Spacer(1, 15))
+        elements.append(Paragraph("<b>Detail Pengujian</b>", styles['Heading2']))
         elements.append(Spacer(1, 10))
-        elements.append(Paragraph("<b>Pengujian</b>", styles['Heading2']))
 
-        for t in tasks:
-            elements.append(Paragraph(f"- {t.title} ({t.status})", styles['Normal']))
+        if not tasks:
+            elements.append(Paragraph("Belum ada pengujian", styles['Normal']))
+        else:
+            for t in tasks:
+                elements.append(
+                    Paragraph(f"- {t.title} ({t.status})", styles['Normal'])
+                )
 
         doc.build(elements)
 
