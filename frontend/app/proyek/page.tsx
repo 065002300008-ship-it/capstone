@@ -35,15 +35,26 @@ export default function ProjectPage() {
     }
   }, []);
 
-  const [formData, setFormData] = useState({
+  type ProjectForm = {
+    name: string;
+    description: string;
+    client_name: string;
+    start_date: string;
+    deadline: string;
+    status: string;
+    budget: string;
+    progress: number;
+  };
+
+  const [formData, setFormData] = useState<ProjectForm>({
     name: '',
     description: '',
     client_name: '',
     start_date: '',
     deadline: '',
     status: 'Planning',
-    budget: 0,
-    progress: 0
+    budget: '',
+    progress: 0,
   });
 
   const fetchProjects = async () => {
@@ -72,8 +83,8 @@ export default function ProjectPage() {
       start_date: '',
       deadline: '',
       status: 'Planning',
-      budget: 0,
-      progress: 0
+      budget: '',
+      progress: 0,
     });
     setIsModalOpen(true);
   };
@@ -90,8 +101,8 @@ export default function ProjectPage() {
       start_date: project.start_date || '',
       deadline: project.deadline || '',
       status: project.status || 'Planning',
-      budget: project.budget || 0,
-      progress: project.progress || 0
+      budget: project.budget != null ? String(project.budget) : '',
+      progress: project.progress || 0,
     });
 
     setIsModalOpen(true);
@@ -107,10 +118,15 @@ export default function ProjectPage() {
     const method = isEditMode ? 'PUT' : 'POST';
 
     try {
+      const payload = {
+        ...formData,
+        budget: formData.budget.trim() === '' ? 0 : Number(formData.budget),
+      };
+
       const res = await fetch(url, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData), // ✅ tidak ada ID
+        body: JSON.stringify(payload), // ✅ tidak ada ID
       });
 
       const data = await res.json();
@@ -377,10 +393,10 @@ export default function ProjectPage() {
                 </select>
                 <input
                   type="number"
-                  placeholder="Budget (IDR)"
+                  placeholder=""
                   className={inputStyle}
                   value={formData.budget}
-                  onChange={(e) => setFormData({ ...formData, budget: Number(e.target.value) })}
+                  onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
                   min={0}
                 />
               </div>

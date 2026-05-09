@@ -15,12 +15,8 @@ function getStoredUsername() {
 export default function Topbar() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [username, setUsername] = useState('');
   const menuRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    setUsername(getStoredUsername());
-  }, []);
+  const username = getStoredUsername();
 
   useEffect(() => {
     function onDocMouseDown(event: MouseEvent) {

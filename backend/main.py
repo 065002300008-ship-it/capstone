@@ -357,6 +357,7 @@ class RenameFile(BaseModel):
 class UserCreate(BaseModel):
     username: str
     email_or_phone: Optional[str] = None
+    password: Optional[str] = None
     status: str = "active"
     role: str = "admin"
 
@@ -1456,9 +1457,6 @@ def list_users(db: Session = Depends(get_db)):
 
 @app.post("/api/v1/users")
 def create_user(data: UserCreate, db: Session = Depends(get_db)):
-    if db.query(User).count() >= 2:
-        raise HTTPException(status_code=409, detail="Maksimal 2 user saja")
-
     username = (data.username or "").strip()
     if not username:
         raise HTTPException(status_code=400, detail="Username wajib diisi")
@@ -1471,13 +1469,26 @@ def create_user(data: UserCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=409, detail="Username sudah digunakan")
 
+    email = (data.email_or_phone or "").strip().lower()
+    password = (data.password or "").strip()
+    if not email:
+        raise HTTPException(status_code=422, detail="Email wajib diisi")
+    if not password:
+        raise HTTPException(status_code=422, detail="Password wajib diisi")
+
+    existing_acc = db.query(AuthAccount).filter(AuthAccount.email == email).first()
+    if existing_acc:
+        raise HTTPException(status_code=409, detail="Email sudah terdaftar")
+
     row = User(
         username=username,
-        email_or_phone=(data.email_or_phone or None),
+        email_or_phone=email,
         role=data.role,
         status=data.status,
     )
     db.add(row)
+    salt = secrets.token_hex(16)
+    db.add(AuthAccount(email=email, password_salt=salt, password_hash=_hash_password(password, salt)))
     db.commit()
     db.refresh(row)
     return _serialize_user(row)
@@ -1509,6 +1520,9 @@ def delete_user(user_id: str, db: Session = Depends(get_db)):
     u = db.query(User).filter(User.id == user_id).first()
     if not u:
         raise HTTPException(status_code=404, detail="User tidak ditemukan")
+    # Best-effort: also remove the auth account for this user (stored by email).
+    if u.email_or_phone:
+        db.query(AuthAccount).filter(AuthAccount.email == u.email_or_phone).delete(synchronize_session=False)
     db.delete(u)
     db.commit()
     return {"message": "User berhasil dihapus"}
