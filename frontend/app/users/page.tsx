@@ -96,6 +96,7 @@ export default function UserManagementPage() {
           }
         : {
             email_or_phone: form.email.trim(),
+            password: form.password.trim() ? form.password : undefined,
             status: form.status,
             role: form.role,
           };
@@ -348,7 +349,16 @@ export default function UserManagementPage() {
                   required
                   autoComplete="new-password"
                 />
-              ) : null}
+              ) : (
+                <input
+                  type="password"
+                  placeholder="Password baru (opsional)"
+                  className="w-full p-2.5 border rounded-lg bg-white text-black outline-none"
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  autoComplete="new-password"
+                />
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <select

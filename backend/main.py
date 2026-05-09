@@ -366,6 +366,7 @@ class UserUpdate(BaseModel):
     email_or_phone: Optional[str] = None
     status: Optional[str] = None
     role: Optional[str] = None
+    password: Optional[str] = None
 
 
 class CompanySettingsUpdate(BaseModel):
@@ -1500,6 +1501,8 @@ def update_user(user_id: str, data: UserUpdate, db: Session = Depends(get_db)):
     if not u:
         raise HTTPException(status_code=404, detail="User tidak ditemukan")
 
+    old_email = (u.email_or_phone or "").strip().lower() or None
+
     if data.role is not None:
         if data.role not in ("admin", "owner"):
             raise HTTPException(status_code=400, detail="Role harus admin atau owner")
@@ -1509,7 +1512,39 @@ def update_user(user_id: str, data: UserUpdate, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="Status harus active atau inactive")
         u.status = data.status
     if data.email_or_phone is not None:
-        u.email_or_phone = (data.email_or_phone or None)
+        new_email = (data.email_or_phone or "").strip().lower()
+        if not new_email:
+            raise HTTPException(status_code=422, detail="Email wajib diisi")
+        # Prevent collision with other users.
+        existing_user = db.query(User).filter(User.email_or_phone == new_email, User.id != u.id).first()
+        if existing_user:
+            raise HTTPException(status_code=409, detail="Email sudah digunakan")
+        # Prevent collision with other auth accounts.
+        existing_acc = db.query(AuthAccount).filter(AuthAccount.email == new_email).first()
+        if existing_acc and (old_email is None or existing_acc.email != old_email):
+            raise HTTPException(status_code=409, detail="Email sudah terdaftar")
+        u.email_or_phone = new_email
+
+    # Keep auth account in sync with user email + optional password reset.
+    current_email = (u.email_or_phone or "").strip().lower() or None
+    if current_email:
+        acc = db.query(AuthAccount).filter(AuthAccount.email == current_email).first()
+        if not acc and old_email:
+            # Email changed: try move old auth account to new email.
+            acc = db.query(AuthAccount).filter(AuthAccount.email == old_email).first()
+            if acc:
+                acc.email = current_email
+        if not acc and (data.password or "").strip():
+            salt = secrets.token_hex(16)
+            acc = AuthAccount(email=current_email, password_salt=salt, password_hash=_hash_password(data.password or "", salt))
+            db.add(acc)
+        if not acc:
+            # User has no auth account yet, admin must set a password.
+            raise HTTPException(status_code=409, detail="Akun login belum dibuat. Isi password untuk membuat akun login.")
+        if (data.password or "").strip():
+            salt = secrets.token_hex(16)
+            acc.password_salt = salt
+            acc.password_hash = _hash_password(data.password or "", salt)
 
     db.commit()
     return {"message": "User berhasil diupdate"}
