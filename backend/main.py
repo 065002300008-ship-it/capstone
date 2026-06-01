@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from fastapi.responses import StreamingResponse, Response
 from io import BytesIO
 from typing import Optional, List
+import json
 from .database import Base, SessionLocal, engine
 import uuid
 import random
@@ -64,10 +65,8 @@ class Project(Base):
     description = Column(String(1000), nullable=True)
     client_name = Column(String(255))
     start_date = Column(Date)
-    deadline = Column(Date)
 
     status = Column(String(50), default="Planning")
-    budget = Column(Integer, default=0)
     progress = Column(Integer, default=0)
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -293,6 +292,11 @@ def _notify(db: Session, *, category: str, title: str, body: Optional[str] = Non
 # ================= APP =================
 app = FastAPI()
 
+
+def _split_env_list(name: str, default: str = "") -> List[str]:
+    raw = os.getenv(name, default)
+    return [item.strip().rstrip("/") for item in raw.split(",") if item.strip()]
+
 @app.on_event("startup")
 def _startup_create_tables() -> None:
     # Attempt to create tables with a short retry loop, so cold starts don't flake
@@ -308,9 +312,16 @@ def _startup_create_tables() -> None:
     if last_error is not None:
         raise last_error
 
+_default_allowed_origins = ",".join(
+    [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_split_env_list("ALLOWED_ORIGINS", _default_allowed_origins),
+    allow_origin_regex=os.getenv("ALLOWED_ORIGIN_REGEX") or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -330,9 +341,7 @@ class ProjectCreate(BaseModel):
     description: str
     client_name: str
     start_date: date
-    deadline: date
     status: str = "Planning"
-    budget: int = 0
 
 
 class ProjectUpdate(BaseModel):
@@ -340,7 +349,6 @@ class ProjectUpdate(BaseModel):
     description: str
     client_name: str
     status: str
-    budget: int
 
 class ReportFolderCreate(BaseModel):
     name: str
@@ -555,11 +563,60 @@ def serialize_project(project: Project):
         "description": project.description,
         "client_name": project.client_name,
         "start_date": str(project.start_date) if project.start_date else None,
-        "deadline": str(project.deadline) if project.deadline else None,
         "status": project.status,
-        "budget": project.budget,
         "progress": project.progress
     }
+
+def _safe_parse_json(text: Optional[str]):
+    if not isinstance(text, str) or not text:
+        return None
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        return None
+
+def serialize_project_detail(project: Project, db: Session):
+    base = serialize_project(project)
+
+    tasks = db.query(Task).filter(Task.project_id == project.id).all()
+
+    material_ids = [t.material_test_id for t in tasks if t.material_test_id]
+    material_tests = []
+    if material_ids:
+        mts = db.query(MaterialTest).filter(MaterialTest.id.in_(material_ids)).all()
+        mt_map = {m.id: m for m in mts}
+        for t in tasks:
+            if not t.material_test_id:
+                continue
+            mt = mt_map.get(t.material_test_id)
+            if not mt:
+                continue
+            item = serialize_material_test(mt)
+            item["task_id"] = t.id
+            material_tests.append(item)
+
+    field_tests = []
+    for t in tasks:
+        if t.material_test_id:
+            continue
+        title = (t.title or "").strip()
+        if not title.startswith("FIELD TEST:"):
+            continue
+        key = title.replace("FIELD TEST:", "").strip().upper()
+        parsed = _safe_parse_json(t.description)
+        field_tests.append(
+            {
+                "key": key,
+                "min_points": parsed.get("min_points") if parsed else None,
+                "offer": parsed.get("offer") if parsed else None,
+                "task_id": t.id,
+            }
+        )
+
+    base["materialTests"] = material_tests
+    base["fieldTests"] = field_tests
+    return base
 
 def serialize_material_test(mt: MaterialTest):
     # UI-friendly numbering, keep raw columns too.
@@ -720,6 +777,25 @@ def migrate_blob_columns_on_startup():
                 pass
 
 
+@app.on_event("startup")
+def drop_legacy_project_columns_on_startup():
+    # User-requested cleanup: remove `projects.deadline` and `projects.budget`.
+    if _DB_KIND != "mysql":
+        return
+
+    with engine.begin() as conn:
+        try:
+            deadline_col = conn.execute(text("SHOW COLUMNS FROM projects LIKE 'deadline'")).fetchone()
+            budget_col = conn.execute(text("SHOW COLUMNS FROM projects LIKE 'budget'")).fetchone()
+
+            if deadline_col:
+                conn.execute(text("ALTER TABLE projects DROP COLUMN deadline"))
+            if budget_col:
+                conn.execute(text("ALTER TABLE projects DROP COLUMN budget"))
+        except Exception:
+            # Ignore if table/columns don't exist or permissions are missing.
+            pass
+
 # ================= MATERIAL TESTS (MASTER) =================
 @app.get("/api/v1/material-tests")
 def get_material_tests(db: Session = Depends(get_db)):
@@ -778,7 +854,7 @@ def get_project(project_id: str, db: Session = Depends(get_db)):
     if not project:
         raise HTTPException(status_code=404, detail="Project tidak ditemukan")
 
-    return serialize_project(project)
+    return serialize_project_detail(project, db)
 
 
 @app.post("/api/v1/projects")
@@ -807,7 +883,6 @@ def update_project(project_id: str, data: ProjectUpdate, db: Session = Depends(g
     project.description = data.description
     project.client_name = data.client_name
     project.status = data.status
-    project.budget = data.budget
 
     db.commit()
 
@@ -991,6 +1066,209 @@ def generate_report(project_id: str, db: Session = Depends(get_db)):
         settings = _get_company_settings(db)
 
         # ================= PDF =================
+        # New template: "TANDA TERIMA" (requested to match the paper form style).
+        # If something goes wrong, we fall back to the previous "LAPORAN PROYEK" template below.
+        try:
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.enums import TA_CENTER
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.units import cm
+            from reportlab.lib.utils import ImageReader
+
+            def _dots(n: int = 34) -> str:
+                return "." * n
+
+            # Group selected material-tests into rows: material -> test names.
+            grouped: dict[str, list[str]] = {}
+            for t in tasks:
+                if not t.material_test_id:
+                    continue
+                mt = material_map.get(t.material_test_id)
+                if not mt:
+                    continue
+                material_name = (mt.material_name or "").strip() or "-"
+                test_name = (mt.test_name or "").strip() or "-"
+                grouped.setdefault(material_name, [])
+                if test_name not in grouped[material_name]:
+                    grouped[material_name].append(test_name)
+
+            buffer = BytesIO()
+            doc = SimpleDocTemplate(
+                buffer,
+                pagesize=A4,
+                leftMargin=1.3 * cm,
+                rightMargin=1.3 * cm,
+                topMargin=1.2 * cm,
+                bottomMargin=1.2 * cm,
+            )
+            styles = getSampleStyleSheet()
+            style_center = ParagraphStyle("center", parent=styles["Normal"], alignment=TA_CENTER)
+            style_header_name = ParagraphStyle(
+                "header_name",
+                parent=styles["Normal"],
+                alignment=TA_CENTER,
+                fontSize=18,
+                leading=22,
+            )
+            style_header_sub = ParagraphStyle(
+                "header_sub",
+                parent=styles["Normal"],
+                alignment=TA_CENTER,
+                fontSize=14,
+                leading=18,
+            )
+            style_header_addr = ParagraphStyle(
+                "header_addr",
+                parent=styles["Normal"],
+                alignment=TA_CENTER,
+                fontSize=10,
+                leading=12,
+            )
+            style_cell = ParagraphStyle("cell", parent=styles["Normal"], fontSize=9, leading=11)
+
+            # Logo (keep Mixindo logo, smaller and pinned to top-left).
+            logo_reader = None
+            logo_w_pt = 0.0
+            logo_h_pt = 0.0
+            if settings.logo_data:
+                try:
+                    reader = ImageReader(BytesIO(settings.logo_data))
+                    w, h = reader.getSize()
+                    max_w = 2.2 * cm
+                    max_h = 1.4 * cm
+                    scale = min(max_w / float(w), max_h / float(h))
+                    logo_reader = reader
+                    logo_w_pt = w * scale
+                    logo_h_pt = h * scale
+                except Exception:
+                    logo_reader = None
+                    logo_w_pt = 0.0
+                    logo_h_pt = 0.0
+
+            company_name = ((settings.company_name or "").strip() or "PT. MIXINDO ABADI KARYA").upper()
+            # Header text centered (independent from logo).
+            elements = [
+                Paragraph(f"<b>{company_name}</b>", style_header_name),
+                Paragraph("<b>Head Office &amp; Laboratory</b>", style_header_sub),
+                Paragraph(
+                    "Jl.Masjid Baiturrahim No.73 Bintaro Tangerang Selatan - Banten 15222 - Telp +62 878 8517 4366",
+                    style_header_addr,
+                ),
+                Spacer(1, 10),
+            ]
+
+            line = Table([[""]], colWidths=[doc.width])
+            line.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, -1), 0.8, colors.black)]))
+            elements.extend([line, Spacer(1, 10), Paragraph("<b><u>TANDA TERIMA</u></b>", style_center), Spacer(1, 14)])
+
+            info_rows = [
+                ["Nama Konsumen", ":", project.client_name or ""],
+                ["Tgl. Penerimaan", ":", project.start_date.isoformat() if project.start_date else ""],
+                ["No. Received", ":", _dots()],
+            ]
+            info = Table(info_rows, colWidths=[3.3 * cm, 0.4 * cm, doc.width - 3.7 * cm])
+            info.setStyle(
+                TableStyle(
+                    [
+                        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+                        ("FONTSIZE", (0, 0), (-1, -1), 10),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                        ("TOPPADDING", (0, 0), (-1, -1), 1),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                    ]
+                )
+            )
+            elements.extend([info, Spacer(1, 10)])
+
+            table_data: List[list] = [["No.", "NAMA MATERIAL", "JUMLAH", "KETERANGAN"]]
+            for idx, material_name in enumerate(sorted(grouped.keys()), start=1):
+                tests = grouped.get(material_name, [])
+                jumlah = str(len(tests)) if tests else ""
+                table_data.append(
+                    [
+                        str(idx),
+                        Paragraph(material_name, styles["Normal"]),
+                        jumlah,
+                        "",
+                    ]
+                )
+
+            # Only show rows for selected materials (no extra blank rows).
+
+            col_no = 1.0 * cm
+            col_mat = 9.2 * cm
+            col_jml = 2.0 * cm
+            col_ket = doc.width - (col_no + col_mat + col_jml)
+
+            material_table = Table(table_data, colWidths=[col_no, col_mat, col_jml, col_ket], repeatRows=1)
+            material_table.setStyle(
+                TableStyle(
+                    [
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, 0), 10),
+                        ("ALIGN", (0, 0), (0, -1), "CENTER"),
+                        ("ALIGN", (2, 1), (2, -1), "CENTER"),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                        ("GRID", (0, 0), (-1, -1), 0.8, colors.black),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                        ("TOPPADDING", (0, 0), (-1, -1), 4),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ]
+                )
+            )
+            elements.append(material_table)
+            elements.append(Spacer(1, 10))
+            elements.append(Paragraph(f"<b>NAMA PROYEK</b> : {project.name or ''}", styles["Normal"]))
+            elements.append(Spacer(1, 18))
+
+            sig_left = Paragraph(
+                "Yang Menerima :<br/>PT. MIXINDO ABADI KARYA<br/><br/><br/><br/><br/><br/>(____________________)",
+                styles["Normal"],
+            )
+            sig_right = Paragraph(
+                "Yang Menyerahkan :<br/>PT. ____________________<br/><br/><br/><br/><br/><br/>(____________________)",
+                styles["Normal"],
+            )
+            sig = Table([[sig_left, "", sig_right]], colWidths=[doc.width * 0.42, doc.width * 0.18, doc.width * 0.40])
+            sig.setStyle(
+                TableStyle(
+                    [
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ]
+                )
+            )
+            elements.append(sig)
+
+            def _on_page(canvas, _doc):
+                if not logo_reader:
+                    return
+                try:
+                    page_h = _doc.pagesize[1]
+                    x = _doc.leftMargin
+                    y = page_h - _doc.topMargin - logo_h_pt
+                    if y < 0:
+                        y = page_h - logo_h_pt
+                    canvas.drawImage(logo_reader, x, y, width=logo_w_pt, height=logo_h_pt, mask="auto")
+                except Exception:
+                    return
+
+            doc.build(elements, onFirstPage=_on_page, onLaterPages=_on_page)
+            buffer.seek(0)
+            return StreamingResponse(
+                buffer,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f"attachment; filename=report_{project.project_code}.pdf"},
+            )
+        except Exception:
+            # Fallback to the old template below.
+            pass
+
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
         from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.lib import colors
@@ -1068,7 +1346,6 @@ def generate_report(project_id: str, db: Session = Depends(get_db)):
         elements.append(Paragraph(f"Status: {project.status}", styles['Normal']))
         elements.append(Paragraph(f"Progress: {project.progress}%", styles['Normal']))
         elements.append(Paragraph(f"Start Date: {project.start_date}", styles['Normal']))
-        elements.append(Paragraph(f"Deadline: {project.deadline}", styles['Normal']))
         elements.append(Paragraph(f"Deskripsi: {project.description or '-'}", styles['Normal']))
 
         elements.append(Spacer(1, 15))
@@ -1358,8 +1635,6 @@ def dashboard(db: Session = Depends(get_db)):
                 "client_name": p.client_name,
                 "status": p.status,
                 "progress": p.progress,
-                "deadline": p.deadline.isoformat() if p.deadline else None,
-                "budget": p.budget,
             }
         )
 

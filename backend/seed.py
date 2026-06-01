@@ -19,7 +19,6 @@ project1 = models.Project(
     name="Renovasi Gedung Utama", 
     client_name="PT. Sinar Jaya", 
     start_date=date(2024, 6, 1), 
-    deadline=date(2024, 12, 15), 
     status="In Progress", 
     progress=85
 )

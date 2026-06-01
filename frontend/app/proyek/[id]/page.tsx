@@ -5,15 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { alertSuccess, alertConfirm, alertError } from '@/lib/alerts';
 import { apiFetch, apiUrl } from '@/lib/api';
 
-type MaterialTest = {
-  id: string;
-  material_no?: string | null;
-  material_name: string;
-  test_no?: number | null;
-  test_name: string;
-  display_no?: string | null;
-};
-
 type Project = {
   id: string;
   project_code: string;
@@ -40,13 +31,11 @@ type Task = {
 
 export default function ProjectDetailPage() {
   const [search, setSearch] = useState('');
-  const [checklistSearch, setChecklistSearch] = useState('');
   const { id } = useParams();
   const router = useRouter();
 
   const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [materialTests, setMaterialTests] = useState<MaterialTest[]>([]);
   const [filter, setFilter] = useState('All');
 
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -68,25 +57,23 @@ export default function ProjectDetailPage() {
 
   const fetchData = async () => {
     try {
-      const [resProject, resTasks, resMaster] = await Promise.all([
+      const [resProject, resTasks] = await Promise.all([
         apiFetch(`/api/v1/projects/${id}`),
         apiFetch(`/api/v1/projects/${id}/tasks`),
-        apiFetch('/api/v1/material-tests'),
       ]);
 
       const projectData = await resProject.json();
       const taskData = await resTasks.json();
-      const masterData = await resMaster.json();
 
       setProject(projectData);
       setTasks(Array.isArray(taskData) ? taskData : []);
-      setMaterialTests(Array.isArray(masterData) ? masterData : []);
     } catch (err) {
       console.error(err);
     }
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (id) fetchData();
   }, [id]);
 
@@ -94,110 +81,22 @@ export default function ProjectDetailPage() {
     try {
       const f = (new URLSearchParams(window.location.search).get('filter') || '').trim();
       if (!f) return;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (['All', 'Pending', 'In Progress', 'Done'].includes(f)) setFilter(f);
     } catch {
       // ignore
     }
   }, []);
 
-  const committedTaskByMaterialTestId = new Map<string, Task>(
-    tasks
-      .filter((t) => t.material_test_id)
-      .map((t) => [String(t.material_test_id), t])
-  );
-
-  const committedSelectedSet = new Set<string>(committedTaskByMaterialTestId.keys());
-  const [pendingSelectedSet, setPendingSelectedSet] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    setPendingSelectedSet(new Set(committedSelectedSet));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks]);
-
-  const isSelected = (materialTestId: string) => pendingSelectedSet.has(materialTestId);
-
-  const checklistQuery = checklistSearch.trim().toLowerCase();
-  const visibleMaterialTests = checklistQuery
-    ? materialTests.filter((x) => {
-        const material = (x.material_name || '').toLowerCase();
-        const test = (x.test_name || '').toLowerCase();
-        return material.includes(checklistQuery) || test.includes(checklistQuery);
-      })
-    : materialTests;
-
-  const checklistDirty =
-    committedSelectedSet.size !== pendingSelectedSet.size ||
-    Array.from(pendingSelectedSet).some((x) => !committedSelectedSet.has(x)) ||
-    Array.from(committedSelectedSet).some((x) => !pendingSelectedSet.has(x));
-
-  const handleCancelChecklist = () => {
-    setPendingSelectedSet(new Set(committedSelectedSet));
-  };
-
-  const handleConfirmChecklist = async () => {
-    const toAdd = Array.from(pendingSelectedSet).filter((x) => !committedSelectedSet.has(x));
-    const toRemove = Array.from(committedSelectedSet).filter((x) => !pendingSelectedSet.has(x));
-
-    if (toAdd.length === 0 && toRemove.length === 0) return;
-
+  const safeParseJson = (text: unknown): { min_points?: unknown; offer?: unknown } | null => {
+    if (typeof text !== 'string') return null;
     try {
-      // Remove first (so re-adding stays consistent if needed)
-      for (const materialTestId of toRemove) {
-        const existing = committedTaskByMaterialTestId.get(materialTestId);
-        if (!existing?.id) continue;
-        // eslint-disable-next-line no-await-in-loop
-        await apiFetch(`/api/v1/tasks/${existing.id}`, { method: 'DELETE' });
-      }
-
-      for (const materialTestId of toAdd) {
-        // eslint-disable-next-line no-await-in-loop
-        const res = await apiFetch('/api/v1/tasks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            project_id: id,
-            material_test_id: materialTestId,
-            description: '',
-            progress: 0,
-            deadline: null,
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          alertError('Gagal', data.detail || 'Terjadi kesalahan pada server.');
-          return;
-        }
-      }
-
-      await alertSuccess('Berhasil', 'Checklist disimpan');
-      fetchData();
-    } catch (e) {
-      console.error(e);
-      alertError('Koneksi Gagal', 'Backend server tidak merespon.');
+      const parsed: unknown = JSON.parse(text);
+      if (parsed && typeof parsed === 'object') return parsed as { min_points?: unknown; offer?: unknown };
+      return null;
+    } catch {
+      return null;
     }
-  };
-
-  const toggleOne = (materialTestId: string, nextChecked: boolean) => {
-    setPendingSelectedSet((prev) => {
-      const next = new Set(prev);
-      if (nextChecked) next.add(materialTestId);
-      else next.delete(materialTestId);
-      return next;
-    });
-  };
-
-  const toggleMaterial = (materialName: string, nextChecked: boolean) => {
-    const group = visibleMaterialTests.filter((x) => x.material_name === materialName);
-    if (group.length === 0) return;
-
-    setPendingSelectedSet((prev) => {
-      const next = new Set(prev);
-      for (const x of group) {
-        if (nextChecked) next.add(x.id);
-        else next.delete(x.id);
-      }
-      return next;
-    });
   };
 
   // ================= START EDIT =================
@@ -404,96 +303,57 @@ export default function ProjectDetailPage() {
 
       <div className="bg-white p-6 rounded-xl shadow mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-          <h2 className="text-xl font-bold">Pilih Tes Material (Checklist)</h2>
-
-          <div className="flex items-center gap-2">
-            <input
-              id="checklist-search"
-              value={checklistSearch}
-              onChange={(e) => setChecklistSearch(e.target.value)}
-              placeholder="Cari Material/Tes"
-              className="border rounded-lg px-3 py-2 w-full md:w-80 bg-white text-black placeholder:text-gray-400 focus:ring-2 focus:ring-green-400 outline-none"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                const el = document.getElementById('checklist-search');
-                if (el instanceof HTMLInputElement) el.focus();
-              }}
-              className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-sm font-semibold"
-              aria-label="Cari"
-            >
-              Cari
-            </button>
+          <h2 className="text-xl font-bold">Tabel Pengujian Terpilih</h2>
+          <div className="text-xs text-gray-500">
+            Menampilkan hanya tabel pengujian yang dipilih saat tambah proyek.
           </div>
         </div>
 
-        {materialTests.length === 0 ? (
-          <p className="text-gray-400">Master Tes Material belum ada / belum bisa dimuat.</p>
+        {tasks.length === 0 ? (
+          <p className="text-gray-400">Belum ada tabel pengujian yang dipilih.</p>
         ) : (
-          <div className="space-y-3">
-            {Array.from(new Set(visibleMaterialTests.map((x) => x.material_name))).map((materialName) => {
-              const group = visibleMaterialTests.filter((x) => x.material_name === materialName);
-              const allChecked = group.length > 0 && group.every((x) => isSelected(x.id));
+          <div className="overflow-auto border rounded-xl">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-700 font-semibold text-left">
+                <tr>
+                  <th className="p-3">Jenis Material</th>
+                  <th className="p-3">Jenis Pengujian</th>
+                  <th className="p-3">Min Titik</th>
+                  <th className="p-3">Penawaran</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tasks
+                  .slice()
+                  .sort((a, b) => {
+                    const aIsField = !a.material_test_id && String(a.title || '').startsWith('FIELD TEST:');
+                    const bIsField = !b.material_test_id && String(b.title || '').startsWith('FIELD TEST:');
 
-              return (
-                <div key={materialName} className="border rounded-lg p-4 bg-gray-50">
-                  <label className="flex items-center gap-2 font-semibold text-gray-800">
-                    <input
-                      type="checkbox"
-                      checked={allChecked}
-                      onChange={(e) => toggleMaterial(materialName, e.target.checked)}
-                    />
-                    {materialName}
-                    <span className="text-xs text-gray-500 font-normal">({group.length} tes)</span>
-                  </label>
+                    const am = (aIsField ? 'FIELD TEST' : (a.material_name || '')).toLowerCase();
+                    const bm = (bIsField ? 'FIELD TEST' : (b.material_name || '')).toLowerCase();
+                    if (am !== bm) return am.localeCompare(bm);
+                    const at = (aIsField ? String(a.title || '').replace('FIELD TEST:', '').trim() : (a.test_name || '')).toLowerCase();
+                    const bt = (bIsField ? String(b.title || '').replace('FIELD TEST:', '').trim() : (b.test_name || '')).toLowerCase();
+                    return at.localeCompare(bt);
+                  })
+                  .map((t) => {
+                    const isField = !t.material_test_id && String(t.title || '').startsWith('FIELD TEST:');
+                    const parsed = isField ? safeParseJson(t.description) : null;
+                    const minPoints = isField ? (parsed?.min_points != null ? String(parsed.min_points) : '') : '';
+                    const offer = isField ? (parsed?.offer != null ? String(parsed.offer) : '') : '';
+                    const fieldName = String(t.title || t.test_name || '').replace('FIELD TEST:', '').trim();
 
-                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {group.map((x) => (
-                      <label key={x.id} className="flex items-start gap-2 text-sm bg-white border rounded p-2">
-                        <input
-                          type="checkbox"
-                          checked={isSelected(x.id)}
-                          onChange={(e) => toggleOne(x.id, e.target.checked)}
-                        />
-                        <div>
-                          <div className="font-medium">
-                            {x.display_no ? <span className="font-mono text-blue-700 mr-2">{x.display_no}</span> : null}
-                            {x.test_name}
-                          </div>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* ACTIONS */}
-            <div className="flex gap-3 justify-end pt-2">
-              <button
-                onClick={handleCancelChecklist}
-                disabled={!checklistDirty}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold ${
-                  !checklistDirty
-                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                    : 'bg-red-600 hover:bg-red-700 text-white'
-                }`}
-              >
-                Batal
-              </button>
-              <button
-                onClick={handleConfirmChecklist}
-                disabled={!checklistDirty}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold ${
-                  !checklistDirty
-                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                    : 'bg-green-600 hover:bg-green-700 text-white'
-                }`}
-              >
-                Konfirmasi
-              </button>
-            </div>
+                    return (
+                      <tr key={t.id} className="border-t text-gray-700">
+                        <td className="p-3">{isField ? 'FIELD TEST' : t.material_name || '-'}</td>
+                        <td className="p-3">{isField ? fieldName || '-' : t.test_name || '-'}</td>
+                        <td className="p-3">{minPoints}</td>
+                        <td className="p-3">{offer}</td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

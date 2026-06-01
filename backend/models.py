@@ -14,11 +14,9 @@ class Project(Base):
     client_name = Column(String(255))
 
     start_date = Column(Date)
-    deadline = Column(Date)
 
     status = Column(String(100), default="Planning")
     priority = Column(String(50), default="Medium")
-    budget = Column(Integer, default=0)
 
     progress = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)

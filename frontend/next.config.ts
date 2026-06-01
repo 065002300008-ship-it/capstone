@@ -6,9 +6,12 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     // If NEXT_PUBLIC_API_BASE is set, the client will call that URL directly.
-    // Otherwise, proxy /api/* to the FastAPI server (default localhost:8000).
+    // Otherwise, local development can proxy /api/* to the FastAPI server.
     if (process.env.NEXT_PUBLIC_API_BASE) return [];
-    const target = process.env.API_PROXY_TARGET ?? "http://localhost:8000";
+    const target =
+      process.env.API_PROXY_TARGET ??
+      (process.env.NODE_ENV === "production" ? undefined : "http://localhost:8000");
+    if (!target) return [];
     return [
       {
         source: "/api/:path*",

@@ -15,8 +15,6 @@ type DashboardPayload = {
     client_name?: string | null;
     status?: string | null;
     progress?: number | null;
-    deadline?: string | null;
-    budget?: number | null;
   }>;
   attention_tasks: Array<{
     task_id: string;
@@ -48,10 +46,6 @@ type AuditLog = {
   entity_label?: string | null;
   created_at?: string | null;
 };
-
-function formatIDR(value: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value || 0);
-}
 
 function statusBadge(status?: string | null) {
   if (!status) return 'bg-gray-200 text-gray-700';
@@ -348,7 +342,7 @@ export default function Dashboard() {
                   <th className="px-6 py-4 font-semibold">Kode</th>
                   <th className="px-6 py-4 font-semibold">Nama</th>
                   <th className="px-6 py-4 font-semibold">Status</th>
-                  <th className="px-6 py-4 font-semibold">Budget</th>
+                  <th className="px-6 py-4 font-semibold">Progress</th>
                 </tr>
               </thead>
               <tbody>
@@ -371,7 +365,7 @@ export default function Dashboard() {
                           {p.status || '-'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 font-semibold text-gray-700">{formatIDR(Number(p.budget || 0))}</td>
+                      <td className="px-6 py-4 font-semibold text-gray-700">{p.progress ?? 0}%</td>
                     </tr>
                   ))
                 )}

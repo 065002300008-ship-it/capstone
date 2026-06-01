@@ -16,7 +16,12 @@ export default function Topbar() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const username = getStoredUsername();
+  const [username, setUsername] = useState('');
+
+  useEffect(() => {
+    const id = window.requestAnimationFrame(() => setUsername(getStoredUsername()));
+    return () => window.cancelAnimationFrame(id);
+  }, []);
 
   useEffect(() => {
     function onDocMouseDown(event: MouseEvent) {
