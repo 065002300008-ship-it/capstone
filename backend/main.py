@@ -207,8 +207,7 @@ class CompanySettings(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-# Table creation is done on startup to avoid crashing during import when the DB is not ready yet
-# (common during Railway deploy restarts).
+# Table creation is done on startup to avoid crashing during import when the DB is not ready yet.
 
 # ================= AUDIT HELPERS =================
 def _actor_username(request: Request) -> Optional[str]:
@@ -299,8 +298,8 @@ def _split_env_list(name: str, default: str = "") -> List[str]:
 
 @app.on_event("startup")
 def _startup_create_tables() -> None:
-    # Attempt to create tables with a short retry loop, so cold starts don't flake
-    # if the MySQL service is still warming up.
+    # Attempt to create tables with a short retry loop in case local MySQL
+    # is still starting.
     last_error: Optional[Exception] = None
     for _ in range(int(os.getenv("DB_INIT_RETRIES", "20"))):
         try:
@@ -1045,7 +1044,7 @@ def get_tasks_by_project(project_id: str, db: Session = Depends(get_db)):
 ]
 
 @app.get("/api/v1/projects/{project_id}/report")
-def generate_report(project_id: str, db: Session = Depends(get_db)):
+def generate_report(project_id: str, preview: bool = Query(False), db: Session = Depends(get_db)):
     try:
         # ✅ SUPPORT ID + PROJECT CODE
         project = db.query(Project).filter(
@@ -1080,8 +1079,8 @@ def generate_report(project_id: str, db: Session = Depends(get_db)):
             def _dots(n: int = 34) -> str:
                 return "." * n
 
-            # Group selected material-tests into rows: material -> test names.
-            grouped: dict[str, list[str]] = {}
+            # Group selected material-tests into rows: material -> test names + rundown.
+            grouped: dict[str, list[dict[str, str]]] = {}
             for t in tasks:
                 if not t.material_test_id:
                     continue
@@ -1090,9 +1089,14 @@ def generate_report(project_id: str, db: Session = Depends(get_db)):
                     continue
                 material_name = (mt.material_name or "").strip() or "-"
                 test_name = (mt.test_name or "").strip() or "-"
+                parsed = _safe_parse_json(t.description)
+                rundown = ""
+                if parsed and isinstance(parsed.get("rundown"), str):
+                    rundown = (parsed.get("rundown") or "").strip()
                 grouped.setdefault(material_name, [])
-                if test_name not in grouped[material_name]:
-                    grouped[material_name].append(test_name)
+                row = {"test_name": test_name, "rundown": rundown}
+                if row not in grouped[material_name]:
+                    grouped[material_name].append(row)
 
             buffer = BytesIO()
             doc = SimpleDocTemplate(
@@ -1260,10 +1264,11 @@ def generate_report(project_id: str, db: Session = Depends(get_db)):
 
             doc.build(elements, onFirstPage=_on_page, onLaterPages=_on_page)
             buffer.seek(0)
+            disposition = "inline" if preview else "attachment"
             return StreamingResponse(
                 buffer,
                 media_type="application/pdf",
-                headers={"Content-Disposition": f"attachment; filename=report_{project.project_code}.pdf"},
+                headers={"Content-Disposition": f"{disposition}; filename=report_{project.project_code}.pdf"},
             )
         except Exception:
             # Fallback to the old template below.
@@ -1355,7 +1360,7 @@ def generate_report(project_id: str, db: Session = Depends(get_db)):
         if not tasks:
             elements.append(Paragraph("Belum ada pengujian", styles['Normal']))
         else:
-            header = ["No", "Material", "Tes", "Status", "Progress", "Deadline", "Detail"]
+            header = ["No", "Material", "Tes", "Rundown", "Status", "Progress", "Deadline", "Detail"]
             data: List[list] = [header]
 
             normal = styles["Normal"]
@@ -1365,22 +1370,28 @@ def generate_report(project_id: str, db: Session = Depends(get_db)):
                 mt = material_map.get(t.material_test_id) if t.material_test_id else None
                 material_name = mt.material_name if mt else "-"
                 test_name = (mt.test_name if mt else (t.title or "-")) or "-"
+                parsed = _safe_parse_json(t.description)
+                rundown = ""
+                if parsed and isinstance(parsed.get("rundown"), str):
+                    rundown = (parsed.get("rundown") or "").strip()
                 deadline = t.deadline.isoformat() if t.deadline else "-"
-                detail = t.description or "-"
+                detail = ""
+                test_label = f"{test_name}{f' ({rundown})' if rundown else ''}"
 
                 data.append([
                     str(idx),
                     Paragraph(material_name, normal),
-                    Paragraph(test_name, normal),
+                    Paragraph(test_label, normal),
+                    Paragraph("", normal),
                     Paragraph(t.status or "-", normal),
                     Paragraph(f"{int(t.progress or 0)}%", normal),
                     Paragraph(deadline, normal),
-                    Paragraph(detail, normal),
+                    Paragraph(detail or "-", normal),
                 ])
 
             table = Table(
                 data,
-                colWidths=[1.0 * cm, 3.0 * cm, 4.0 * cm, 2.2 * cm, 2.0 * cm, 2.6 * cm, 4.2 * cm],
+                colWidths=[1.0 * cm, 3.0 * cm, 4.0 * cm, 2.2 * cm, 2.2 * cm, 2.0 * cm, 2.6 * cm, 3.5 * cm],
                 repeatRows=1,
             )
             table.setStyle(
@@ -1428,12 +1439,13 @@ def generate_report(project_id: str, db: Session = Depends(get_db)):
         doc.build(elements, onFirstPage=_on_page, onLaterPages=_on_page)
 
         buffer.seek(0)
+        disposition = "inline" if preview else "attachment"
 
         return StreamingResponse(
             buffer,
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f"attachment; filename=report_{project.project_code}.pdf"
+                "Content-Disposition": f"{disposition}; filename=report_{project.project_code}.pdf"
             }
         )
 

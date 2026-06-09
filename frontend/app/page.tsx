@@ -238,7 +238,7 @@ export default function Dashboard() {
         </button>
 
         <button
-          onClick={() => router.push('/dokumen')}
+          onClick={() => router.push('/laporan')}
           className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center text-left hover:shadow-md transition"
         >
           <div>
@@ -418,7 +418,6 @@ export default function Dashboard() {
           <h3 className="text-sm font-semibold text-gray-800">Aktivitas Terakhir</h3>
           <div className="flex gap-3 text-xs">
             <button onClick={() => router.push('/laporan')} className="text-blue-700 hover:underline">Laporan</button>
-            <button onClick={() => router.push('/dokumen')} className="text-blue-700 hover:underline">Dokumen</button>
           </div>
         </div>
         {audit.length === 0 ? (

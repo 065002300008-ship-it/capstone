@@ -1,43 +1,40 @@
 # Capstone Project
 
-Deployment target:
+Project ini dikonfigurasi untuk berjalan di localhost.
 
-- Frontend: Vercel, with Root Directory set to `frontend`
-- Backend API: Railway, using the root `Dockerfile`
-- Database: Railway MySQL, exposed to the backend through `DATABASE_URL`
+## Backend
 
-## Environment Variables
+Jalankan dari folder root project:
 
-### Vercel Frontend
-
-Set this in Vercel Project Settings:
-
-```env
-NEXT_PUBLIC_API_BASE=https://your-backend.up.railway.app
+```bat
+venv\Scripts\activate.bat
+uvicorn main:app --reload
 ```
 
-Do not use `localhost` for production. The frontend calls this URL directly from the browser.
+Backend berjalan di:
 
-### Railway Backend
-
-Set these in Railway Variables:
-
-```env
-DATABASE_URL=mysql://USER:PASSWORD@HOST:PORT/DATABASE
-ALLOWED_ORIGINS=https://your-frontend.vercel.app
+```text
+http://localhost:8000
 ```
 
-`DATABASE_URL` can be either `mysql://...` from Railway or `mysql+pymysql://...`; the backend normalizes `mysql://...` automatically.
-
-For Vercel preview deployments, optionally add:
+Default database lokal:
 
 ```env
-ALLOWED_ORIGIN_REGEX=https://.*\.vercel\.app
+DATABASE_URL=mysql+pymysql://root@localhost/mixindo_db
 ```
 
-## Deploy Notes
+## Frontend
 
-1. Deploy the backend service to Railway first and copy its public URL.
-2. Add that backend URL as `NEXT_PUBLIC_API_BASE` in Vercel.
-3. Add the Vercel frontend URL as `ALLOWED_ORIGINS` in Railway.
-4. Redeploy both services after changing environment variables.
+Jalankan dari folder `frontend`:
+
+```bat
+npm run dev
+```
+
+Frontend berjalan di:
+
+```text
+http://localhost:3000
+```
+
+Saat `NEXT_PUBLIC_API_BASE` tidak di-set, request `/api/*` otomatis diproxy ke `http://localhost:8000`.

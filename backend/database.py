@@ -7,11 +7,11 @@ except Exception:  # pragma: no cover
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-# Load .env for local development only (Railway/Vercel should use real env vars).
+# Load .env for local development.
 if load_dotenv is not None:
     load_dotenv()
 
-# Railway MySQL may provide `mysql://...`; SQLAlchemy wants `mysql+pymysql://...`.
+# Default to the local MySQL database used by the localhost workflow.
 raw_database_url = os.getenv("DATABASE_URL") or "mysql+pymysql://root@localhost/mixindo_db"
 if raw_database_url.startswith("mysql://"):
     DATABASE_URL = "mysql+pymysql://" + raw_database_url.removeprefix("mysql://")

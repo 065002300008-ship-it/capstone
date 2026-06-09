@@ -1,15 +1,24 @@
-altgraph @ file:///AppleInternal/Library/BuildRoots/4~B7IEugDHS-fAL-bTRqAKCb_qmc84naJzmK7469Q/Library/Caches/com.apple.xbs/Sources/python3/altgraph-0.17.2-py2.py3-none-any.whl
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anyio==4.12.1
+cffi==2.0.0
 charset-normalizer==3.4.7
-fpdf==1.7.2
-future @ file:///AppleInternal/Library/BuildRoots/4~B7IEugDHS-fAL-bTRqAKCb_qmc84naJzmK7469Q/Library/Caches/com.apple.xbs/Sources/python3/future-0.18.2-py3-none-any.whl
-gunicorn==23.0.0
-macholib @ file:///AppleInternal/Library/BuildRoots/4~B7IEugDHS-fAL-bTRqAKCb_qmc84naJzmK7469Q/Library/Caches/com.apple.xbs/Sources/python3/macholib-1.15.2-py2.py3-none-any.whl
-packaging==26.2
+click==8.1.8
+cryptography==47.0.0
+exceptiongroup==1.3.1
+fastapi==0.128.8
+h11==0.16.0
+idna==3.13
 pillow==11.3.0
+pycparser==2.23
+pydantic==2.13.3
+pydantic_core==2.46.3
 PyMySQL==1.1.2
-pypdf==6.0.0
 python-dotenv==1.2.1
+python-multipart==0.0.20
 reportlab==4.4.10
-six @ file:///AppleInternal/Library/BuildRoots/4~B7IEugDHS-fAL-bTRqAKCb_qmc84naJzmK7469Q/Library/Caches/com.apple.xbs/Sources/python3/six-1.15.0-py2.py3-none-any.whl
 SQLAlchemy==2.0.49
+starlette==0.49.3
+typing-inspection==0.4.2
 typing_extensions==4.15.0
+uvicorn==0.39.0

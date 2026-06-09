@@ -13,6 +13,27 @@ type MaterialTest = {
   display_no?: string | null;
 };
 
+const MATERIAL_RUNDOWN_OPTIONS: Record<string, string[]> = {
+  'BASE A / B SUB-BASE': ['BASE A', 'BASE B', 'SUB BASE'],
+  'BASE A / B / C SUB-BASE': ['BASE A', 'BASE B', 'BASE C', 'SUB BASE'],
+  'SIRTU SIRDAM GRANULAR': ['BASE A', 'BASE B', 'BASE C', 'SUB BASE'],
+  'BATU SPLITE': ['5-10 mm', '2-25', '10-20 mm', '10-25', '20-30 mm'],
+  PASIR: ['5-10 mm', '2-25', '10-20 mm', '10-25', '20-30 mm'],
+  'ABU BATU': ['5-10 mm', '2-25', '10-20 mm', '10-25', '20-30 mm'],
+};
+
+const normalizeMaterialName = (name: string) => name.trim().toUpperCase().replace(/\s+/g, ' ');
+const getRundownOptionsForMaterial = (materialName: string) => {
+  const normalized = normalizeMaterialName(materialName);
+  if (normalized.includes('BASE A / B / C SUB-BASE')) return MATERIAL_RUNDOWN_OPTIONS['BASE A / B / C SUB-BASE'];
+  if (normalized.includes('BASE A / B SUB-BASE')) return MATERIAL_RUNDOWN_OPTIONS['BASE A / B SUB-BASE'];
+  if (normalized.includes('SIRTU SIRDAM GRANULAR')) return MATERIAL_RUNDOWN_OPTIONS['SIRTU SIRDAM GRANULAR'];
+  if (normalized.includes('BATU SPLITE')) return MATERIAL_RUNDOWN_OPTIONS['BATU SPLITE'];
+  if (normalized.includes('PASIR')) return MATERIAL_RUNDOWN_OPTIONS.PASIR;
+  if (normalized.includes('ABU BATU')) return MATERIAL_RUNDOWN_OPTIONS['ABU BATU'];
+  return null;
+};
+
 type FieldTestKey =
   | 'CBR'
   | 'SAND CONE'
@@ -64,6 +85,7 @@ type ProjectDetail = Project & {
 export default function ProjectPage() {
   const [search, setSearch] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedId, setSelectedId] = useState(''); // ✅ ID disimpan di sini
@@ -74,6 +96,7 @@ export default function ProjectPage() {
   const [materialTests, setMaterialTests] = useState<MaterialTest[]>([]);
   const [checklistSearch, setChecklistSearch] = useState('');
   const [selectedMaterialTestIds, setSelectedMaterialTestIds] = useState<Set<string>>(new Set());
+  const [selectedRundownByTestId, setSelectedRundownByTestId] = useState<Record<string, string>>({});
   const [addStep, setAddStep] = useState<1 | 2>(1);
   const [pickerMinimized, setPickerMinimized] = useState(false);
   const [fieldTests, setFieldTests] = useState<Record<FieldTestKey, FieldTestValue>>(() => {
@@ -177,6 +200,10 @@ export default function ProjectPage() {
       setProjects([]);
     }
   };
+
+  useEffect(() => {
+    setSelectedProjectIds(new Set());
+  }, [projects]);
 
   const fetchMaterialTests = async () => {
     try {
@@ -588,6 +615,7 @@ export default function ProjectPage() {
 	        const projectId = String(data?.id || '');
 	        if (projectId && selectedMaterialTestIds.size > 0) {
 	          for (const materialTestId of Array.from(selectedMaterialTestIds)) {
+              const rundown = selectedRundownByTestId[materialTestId] || null;
             // eslint-disable-next-line no-await-in-loop
             const taskRes = await apiFetch('/api/v1/tasks', {
               method: 'POST',
@@ -595,7 +623,7 @@ export default function ProjectPage() {
               body: JSON.stringify({
                 project_id: projectId,
                 material_test_id: materialTestId,
-                description: '',
+                description: JSON.stringify({ rundown }),
                 progress: 0,
                 deadline: null,
               }),
@@ -638,6 +666,15 @@ export default function ProjectPage() {
     } catch {
       alertError("Gagal Menghapus", "Terjadi kesalahan koneksi.");
     }
+  };
+
+  const toggleProjectSelection = (projectId: string, checked: boolean) => {
+    setSelectedProjectIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(projectId);
+      else next.delete(projectId);
+      return next;
+    });
   };
 
   const getStatusColor = (status: string) => {
@@ -683,6 +720,16 @@ export default function ProjectPage() {
     });
   };
 
+  const getRundownLabel = (testId: string, materialName: string) => {
+    return selectedRundownByTestId[testId] || getRundownOptionsForMaterial(materialName)?.[0] || '';
+  };
+  const setRundownLabel = (testId: string, label: string) => {
+    setSelectedRundownByTestId((prev) => ({
+      ...prev,
+      [testId]: label,
+    }));
+  };
+
   const setFieldChecked = (key: FieldTestKey, checked: boolean) => {
     setFieldTests((prev) => ({
       ...prev,
@@ -722,6 +769,54 @@ export default function ProjectPage() {
     );
   });
 
+  const visibleProjects = filteredProjects;
+  const visibleProjectIds = visibleProjects.map((p) => p.id);
+  const allVisibleSelected = visibleProjectIds.length > 0 && visibleProjectIds.every((id) => selectedProjectIds.has(id));
+  const someVisibleSelected = visibleProjectIds.some((id) => selectedProjectIds.has(id));
+
+  const toggleVisibleProjects = (checked: boolean) => {
+    setSelectedProjectIds((prev) => {
+      const next = new Set(prev);
+      for (const id of visibleProjectIds) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const handleBulkDeleteProjects = async () => {
+    const ids = Array.from(selectedProjectIds);
+    if (ids.length === 0) return;
+
+    const result = await alertConfirm(
+      'Hapus banyak proyek?',
+      `Hapus ${ids.length} proyek yang dipilih? Tindakan ini tidak bisa dibatalkan.`,
+      'Ya, Hapus'
+    );
+    if (!result.isConfirmed) return;
+
+    try {
+      for (const projectId of ids) {
+        const project = projects.find((p) => p.id === projectId);
+        // eslint-disable-next-line no-await-in-loop
+        const res = await apiFetch(`/api/v1/projects/${projectId}`, { method: 'DELETE' });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          alertError('Gagal Menghapus', data.detail || `Gagal menghapus proyek ${project?.name || projectId}.`);
+          return;
+        }
+      }
+
+      await alertSuccess('Berhasil', 'Proyek terpilih berhasil dihapus.');
+      setSelectedProjectIds(new Set());
+      fetchProjects();
+    } catch (e) {
+      console.error(e);
+      alertError('Koneksi Gagal', 'Terjadi kesalahan koneksi.');
+    }
+  };
+
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
 
@@ -729,9 +824,27 @@ export default function ProjectPage() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 text-gray-800">
 
   {/* LEFT SIDE */}
-  <div className="w-full">
+    <div className="w-full">
     <h1 className="text-3xl font-bold text-blue-700">Daftar Proyek</h1>
     <p className="text-gray-500 text-sm mb-3">Kelola semua proyek Mixindo</p>
+
+    <div className="mb-3 flex items-center gap-3">
+      <button
+        type="button"
+        onClick={handleBulkDeleteProjects}
+        disabled={selectedProjectIds.size === 0}
+        className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+          selectedProjectIds.size > 0
+            ? 'bg-red-600 hover:bg-red-700 text-white'
+            : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+        }`}
+      >
+        Hapus Terpilih
+      </button>
+      <span className="text-xs text-gray-500">
+        {selectedProjectIds.size} proyek dipilih
+      </span>
+    </div>
 
     {statusParam ? (
       <div className="mb-3">
@@ -780,6 +893,17 @@ export default function ProjectPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-100 text-gray-700 font-semibold text-left">
             <tr>
+              <th className="p-4 w-[60px]">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = !allVisibleSelected && someVisibleSelected;
+                  }}
+                  onChange={(e) => toggleVisibleProjects(e.target.checked)}
+                  aria-label="Pilih semua proyek yang terlihat"
+                />
+              </th>
               <th className="p-4">ID</th>
               <th>Nama Proyek</th>
               <th>Client</th>
@@ -793,6 +917,14 @@ export default function ProjectPage() {
   {filteredProjects.length > 0 ? (
     filteredProjects.map((p) => (
       <tr key={p.id} className="border-b hover:bg-gray-50 text-gray-700">
+        <td className="p-4">
+          <input
+            type="checkbox"
+            checked={selectedProjectIds.has(p.id)}
+            onChange={(e) => toggleProjectSelection(p.id, e.target.checked)}
+            aria-label={`Pilih proyek ${p.name}`}
+          />
+        </td>
         
         <td className="p-4 text-blue-600 font-bold">
           {p.project_code}
@@ -823,45 +955,54 @@ export default function ProjectPage() {
           <span className="text-xs text-gray-500">{p.progress}%</span>
         </td>
 
-        <td className="p-4 text-center space-x-2">
+        <td className="p-4 align-top">
+          <div className="grid grid-cols-2 gap-2 min-w-[260px]">
+            <button
+              onClick={() => router.push(`/proyek/${p.id}`)}
+              className="bg-blue-600 hover:bg-blue-700 active:scale-95 transition text-white px-3 py-2 rounded-lg text-xs font-semibold w-full"
+            >
+              Detail
+            </button>
 
-  <button
-    onClick={() => router.push(`/proyek/${p.id}`)}
-    className="bg-blue-600 hover:bg-blue-700 active:scale-95 transition text-white px-3 py-1 rounded text-sm font-semibold"
-  >
-    🔍 Detail
-  </button>
+            <button
+              onClick={() => handleEditClick(p)}
+              className="bg-amber-500 hover:bg-amber-600 active:scale-95 transition text-white px-3 py-2 rounded-lg text-xs font-semibold w-full"
+            >
+              Edit
+            </button>
 
-  <button
-    onClick={() => handleEditClick(p)}
-    className="bg-amber-500 hover:bg-amber-600 active:scale-95 transition text-white px-3 py-1 rounded text-sm font-semibold"
-  >
-    ✏️ Edit
-  </button>
+            <button
+              onClick={() => handleDelete(p.id, p.name)}
+              className="bg-red-500 hover:bg-red-600 active:scale-95 transition text-white px-3 py-2 rounded-lg text-xs font-semibold w-full"
+            >
+              Hapus
+            </button>
 
-  <button
-    onClick={() => handleDelete(p.id, p.name)}
-    className="bg-red-500 hover:bg-red-600 active:scale-95 transition text-white px-3 py-1 rounded text-sm font-semibold"
-  >
-    🗑️ Hapus
-  </button>
+            <button
+              onClick={() => {
+                window.open(apiUrl(`/api/v1/projects/${p.id}/report`), '_blank');
+              }}
+              className="bg-purple-600 hover:bg-purple-700 active:scale-95 transition text-white px-3 py-2 rounded-lg text-xs font-semibold w-full"
+            >
+              Download
+            </button>
 
-  <button
-    onClick={() => {
-      window.open(apiUrl(`/api/v1/projects/${p.id}/report`), '_blank');
-    }}
-    className="bg-purple-600 hover:bg-purple-700 active:scale-95 transition text-white px-3 py-1 rounded text-sm font-semibold"
-  >
-    📄 Laporan
-  </button>
-
-</td>
+            <button
+              onClick={() => {
+                window.open(apiUrl(`/api/v1/projects/${p.id}/report?preview=1`), '_blank', 'noopener,noreferrer');
+              }}
+              className="col-span-2 bg-slate-600 hover:bg-slate-700 active:scale-95 transition text-white px-3 py-2 rounded-lg text-xs font-semibold w-full"
+            >
+              Preview
+            </button>
+          </div>
+        </td>
 
       </tr>
     ))
   ) : (
     <tr>
-      <td colSpan={7} className="text-center p-6 text-gray-400 italic">
+      <td colSpan={8} className="text-center p-6 text-gray-400 italic">
         🔍 Tidak ada proyek ditemukan
       </td>
     </tr>
@@ -1076,38 +1217,59 @@ export default function ProjectPage() {
 	                            <p className="text-gray-400">Master Tes Material belum ada / belum bisa dimuat.</p>
 	                          ) : null}
 
-	                          {Array.from(new Set(visibleMaterialTests.map((x) => x.material_name))).map((materialName) => {
+                          {Array.from(new Set(visibleMaterialTests.map((x) => x.material_name))).map((materialName) => {
 	                            const group = visibleMaterialTests.filter((x) => x.material_name === materialName);
-	                            const allChecked = group.length > 0 && group.every((x) => isSelected(x.id));
+                            const normalizedMaterialName = normalizeMaterialName(materialName);
+                            const isNoCheckboxMaterial =
+                              normalizedMaterialName === 'PASIR ABU BATU' ||
+                              normalizedMaterialName === 'PASIR' ||
+                              normalizedMaterialName === 'ABU BATU';
 
 	                            return (
 	                              <div key={materialName} className="border rounded-lg p-4 bg-gray-50">
-	                                <label className="flex items-center gap-2 font-semibold text-gray-800">
-	                                  <input
-	                                    type="checkbox"
-	                                    checked={allChecked}
-	                                    onChange={(e) => toggleMaterial(materialName, e.target.checked)}
-	                                  />
-	                                  {materialName}
+	                                <div className="flex items-center gap-2 font-semibold text-gray-800">
+	                                  <span>{materialName}</span>
 	                                  <span className="text-xs text-gray-500 font-normal">({group.length} tes)</span>
-	                                </label>
+	                                </div>
 
 	                                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
-	                                  {group.map((x) => (
-	                                    <label key={x.id} className="flex items-start gap-2 text-sm bg-white border rounded p-2">
-	                                      <input
-	                                        type="checkbox"
-	                                        checked={isSelected(x.id)}
-	                                        onChange={(e) => toggleOne(x.id, e.target.checked)}
-	                                      />
-	                                      <div>
-	                                        <div className="font-medium">
-	                                          {x.display_no ? <span className="font-mono text-blue-700 mr-2">{x.display_no}</span> : null}
-	                                          {x.test_name}
+	                                  {group.map((x) => {
+	                                    const rundownOptions = getRundownOptionsForMaterial(materialName);
+	                                    return (
+	                                      <div key={x.id} className="flex items-start gap-2 text-sm bg-white border rounded p-2">
+	                                        {isNoCheckboxMaterial ? null : (
+	                                          <input
+	                                            type="checkbox"
+	                                            checked={isSelected(x.id)}
+	                                            onChange={(e) => toggleOne(x.id, e.target.checked)}
+	                                          />
+	                                        )}
+	                                        <div className="flex-1">
+	                                          <div className="font-medium flex items-center gap-2 flex-wrap">
+	                                            {x.display_no ? <span className="font-mono text-blue-700 mr-2">{x.display_no}</span> : null}
+	                                            {x.test_name}
+	                                            {rundownOptions ? (
+	                                              <div className="relative inline-flex items-center">
+	                                                <select
+	                                                  value={getRundownLabel(x.id, materialName)}
+	                                                  onChange={(e) => setRundownLabel(x.id, e.target.value)}
+	                                                  className="h-6 max-w-[118px] rounded-md border border-gray-300 bg-white px-1 pr-5 text-[11px] font-medium text-gray-700 shadow-sm outline-none"
+	                                                  aria-label={`Pilih rundown ${materialName} untuk ${x.test_name}`}
+	                                                >
+	                                                  {rundownOptions.map((opt) => (
+	                                                    <option key={opt} value={opt}>
+	                                                      {opt}
+	                                                    </option>
+	                                                  ))}
+	                                                </select>
+	                                                <span className="pointer-events-none absolute right-1 text-[10px] text-gray-500">v</span>
+	                                              </div>
+	                                            ) : null}
+	                                          </div>
 	                                        </div>
 	                                      </div>
-	                                    </label>
-	                                  ))}
+	                                    );
+	                                  })}
 	                                </div>
 	                              </div>
 	                            );

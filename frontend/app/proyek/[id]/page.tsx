@@ -242,6 +242,20 @@ export default function ProjectDetailPage() {
   const doneCount = tasks.filter(t => t.status === 'Done').length;
 
   const maxValue = Math.max(pendingCount, progressCount, doneCount, 1);
+  const materialRows = (() => {
+    const grouped = new Map<string, Array<{ task: Task; isField: boolean; fieldName: string; rundown: string }>>();
+    for (const t of filteredTasks) {
+      const isField = !t.material_test_id && String(t.title || '').startsWith('FIELD TEST:');
+      const material = isField ? 'FIELD TEST' : (t.material_name || '-');
+      const parsed = safeParseJson(t.description);
+      const rundown = parsed && typeof parsed.rundown === 'string' ? parsed.rundown : '';
+      const fieldName = String(t.title || t.test_name || '').replace('FIELD TEST:', '').trim();
+      const item = { task: t, isField, fieldName, rundown };
+      if (!grouped.has(material)) grouped.set(material, []);
+      grouped.get(material)!.push(item);
+    }
+    return Array.from(grouped.entries()).map(([material, rows]) => ({ material, rows }));
+  })();
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen text-gray-800">
@@ -312,46 +326,46 @@ export default function ProjectDetailPage() {
         {tasks.length === 0 ? (
           <p className="text-gray-400">Belum ada tabel pengujian yang dipilih.</p>
         ) : (
-          <div className="overflow-auto border rounded-xl">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-700 font-semibold text-left">
+          <div className="overflow-auto border rounded-xl bg-white">
+            <table className="w-full min-w-[820px] text-sm table-fixed">
+              <thead className="bg-gray-50 text-gray-700 text-left sticky top-0 z-10">
                 <tr>
-                  <th className="p-3">Jenis Material</th>
-                  <th className="p-3">Jenis Pengujian</th>
-                  <th className="p-3">Min Titik</th>
-                  <th className="p-3">Penawaran</th>
+                  <th className="p-3 w-[26%] border-b">Jenis Material</th>
+                  <th className="p-3 w-[44%] border-b">Jenis Pengujian</th>
+                  <th className="p-3 w-[15%] border-b">Min Titik</th>
+                  <th className="p-3 w-[15%] border-b">Penawaran</th>
                 </tr>
               </thead>
-              <tbody>
-                {tasks
-                  .slice()
-                  .sort((a, b) => {
-                    const aIsField = !a.material_test_id && String(a.title || '').startsWith('FIELD TEST:');
-                    const bIsField = !b.material_test_id && String(b.title || '').startsWith('FIELD TEST:');
-
-                    const am = (aIsField ? 'FIELD TEST' : (a.material_name || '')).toLowerCase();
-                    const bm = (bIsField ? 'FIELD TEST' : (b.material_name || '')).toLowerCase();
-                    if (am !== bm) return am.localeCompare(bm);
-                    const at = (aIsField ? String(a.title || '').replace('FIELD TEST:', '').trim() : (a.test_name || '')).toLowerCase();
-                    const bt = (bIsField ? String(b.title || '').replace('FIELD TEST:', '').trim() : (b.test_name || '')).toLowerCase();
-                    return at.localeCompare(bt);
-                  })
-                  .map((t) => {
-                    const isField = !t.material_test_id && String(t.title || '').startsWith('FIELD TEST:');
-                    const parsed = isField ? safeParseJson(t.description) : null;
-                    const minPoints = isField ? (parsed?.min_points != null ? String(parsed.min_points) : '') : '';
-                    const offer = isField ? (parsed?.offer != null ? String(parsed.offer) : '') : '';
-                    const fieldName = String(t.title || t.test_name || '').replace('FIELD TEST:', '').trim();
+              <tbody className="align-top">
+                {materialRows.map(({ material, rows }) =>
+                  rows.map((row, idx) => {
+                    const t = row.task;
+                    const parsed = row.isField ? safeParseJson(t.description) : null;
+                    const minPoints = row.isField ? (parsed?.min_points != null ? String(parsed.min_points) : '') : '';
+                    const offer = row.isField ? (parsed?.offer != null ? String(parsed.offer) : '') : '';
+                    const displayName = row.isField
+                      ? row.fieldName || '-'
+                      : `${t.test_name || '-'}${row.rundown ? ` (${row.rundown})` : ''}`;
 
                     return (
-                      <tr key={t.id} className="border-t text-gray-700">
-                        <td className="p-3">{isField ? 'FIELD TEST' : t.material_name || '-'}</td>
-                        <td className="p-3">{isField ? fieldName || '-' : t.test_name || '-'}</td>
-                        <td className="p-3">{minPoints}</td>
-                        <td className="p-3">{offer}</td>
+                      <tr key={t.id} className="border-t border-gray-200 text-gray-700 hover:bg-gray-50/70">
+                        {idx === 0 ? (
+                          <td className="p-3 align-top font-semibold bg-gray-50 border-r border-gray-200" rowSpan={rows.length}>
+                            <div className="sticky top-0">
+                              <div className="text-sm text-gray-900">{material}</div>
+                              <div className="text-xs text-gray-400 mt-1">{rows.length} pengujian</div>
+                            </div>
+                          </td>
+                        ) : null}
+                        <td className="p-3 border-r border-gray-100">
+                          <span className="font-medium text-gray-800">{displayName}</span>
+                        </td>
+                        <td className="p-3 text-gray-600">{minPoints || '-'}</td>
+                        <td className="p-3 text-gray-600">{offer || '-'}</td>
                       </tr>
                     );
-                  })}
+                  })
+                )}
               </tbody>
             </table>
           </div>

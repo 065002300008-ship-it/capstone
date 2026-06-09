@@ -17,6 +17,7 @@ export default function TesMaterialPage() {
   const [items, setItems] = useState<MaterialTest[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -47,6 +48,10 @@ export default function TesMaterialPage() {
     fetchItems();
   }, []);
 
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [items]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return items;
@@ -65,6 +70,43 @@ export default function TesMaterialPage() {
     setEditingId('');
     setFormData({ material_no: '', material_name: '', test_no: '', test_name: '' });
     setIsModalOpen(true);
+  };
+
+  const toggleSelected = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    const result = await alertConfirm(
+      'Hapus Tes Material?',
+      `Hapus ${selectedIds.size} data tes material yang dipilih?`,
+      'Ya, Hapus'
+    );
+    if (!result.isConfirmed) return;
+
+    try {
+      for (const id of Array.from(selectedIds)) {
+        // eslint-disable-next-line no-await-in-loop
+        const res = await apiFetch(`/api/v1/material-tests/${id}`, { method: 'DELETE' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          alertError('Gagal Menghapus', data.detail || 'Terjadi kesalahan.');
+          return;
+        }
+      }
+      await alertSuccess('Terhapus', 'Data tes material terpilih berhasil dihapus.');
+      setSelectedIds(new Set());
+      await fetchItems();
+    } catch (err) {
+      console.error(err);
+      alertError('Koneksi Gagal', 'Backend server tidak merespon.');
+    }
   };
 
   const openEdit = (x: MaterialTest) => {
@@ -155,6 +197,18 @@ export default function TesMaterialPage() {
         </div>
 
         <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleBulkDelete}
+            disabled={selectedIds.size === 0}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+              selectedIds.size > 0
+                ? 'bg-red-600 hover:bg-red-700 text-white'
+                : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            Hapus Terpilih
+          </button>
           <div className="flex items-center">
             <input
               value={search}
@@ -182,6 +236,7 @@ export default function TesMaterialPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-700 border-b">
             <tr>
+              <th className="p-4 text-left w-[60px]">Pilih</th>
               <th className="p-4 text-left w-[90px]">No</th>
               <th className="p-4 text-left">Jenis Material</th>
               <th className="p-4 text-left">Jenis Pengujian</th>
@@ -191,19 +246,26 @@ export default function TesMaterialPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={4} className="p-6 text-center text-gray-400 italic">
+                  <td colSpan={5} className="p-6 text-center text-gray-400 italic">
                   Memuat...
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={4} className="p-6 text-center text-gray-400 italic">
+                <td colSpan={5} className="p-6 text-center text-gray-400 italic">
                   Tidak ada data
                 </td>
               </tr>
             ) : (
               filtered.map((x) => (
                 <tr key={x.id} className="border-b hover:bg-gray-50">
+                  <td className="p-4">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(x.id)}
+                      onChange={(e) => toggleSelected(x.id, e.target.checked)}
+                    />
+                  </td>
                   <td className="p-4 font-mono text-blue-700">{x.display_no || '-'}</td>
                   <td className="p-4 text-gray-800 font-semibold">{x.material_name}</td>
                   <td className="p-4 text-gray-700">{x.test_name}</td>

@@ -1,4 +1,4 @@
-# Railway backend container (FastAPI + MySQL)
+# Backend container (FastAPI + MySQL)
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -14,4 +14,3 @@ COPY backend /app/backend
 ENV PYTHONPATH=/app
 
 CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
-

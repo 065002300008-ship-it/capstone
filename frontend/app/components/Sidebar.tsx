@@ -17,9 +17,6 @@ export default function Sidebar() {
         <Link href="/laporan" className="block p-3 hover:bg-blue-800 rounded-lg text-sm font-medium transition-colors">
           Laporan
         </Link>
-        <Link href="/dokumen" className="block p-3 hover:bg-blue-800 rounded-lg text-sm font-medium transition-colors">
-          Dokumen
-        </Link>
         <Link href="/tes-material" className="block p-3 hover:bg-blue-800 rounded-lg text-sm font-medium transition-colors">
           Daftar Tes Material
         </Link>
