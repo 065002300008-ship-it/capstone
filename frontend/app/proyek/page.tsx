@@ -16,8 +16,8 @@ type MaterialTest = {
 const MATERIAL_RUNDOWN_OPTIONS: Record<string, string[]> = {
   'BASE A / B SUB-BASE': ['BASE A', 'BASE B', 'SUB BASE'],
   'BASE A / B / C SUB-BASE': ['BASE A', 'BASE B', 'BASE C', 'SUB BASE'],
+  'PASIR ABU BATU': ['5-10 mm', '2-25', '10-20 mm', '10-25', '20-30 mm'],
   'SIRTU SIRDAM GRANULAR': ['BASE A', 'BASE B', 'BASE C', 'SUB BASE'],
-  'BATU SPLITE': ['5-10 mm', '2-25', '10-20 mm', '10-25', '20-30 mm'],
   PASIR: ['5-10 mm', '2-25', '10-20 mm', '10-25', '20-30 mm'],
   'ABU BATU': ['5-10 mm', '2-25', '10-20 mm', '10-25', '20-30 mm'],
 };
@@ -27,10 +27,10 @@ const getRundownOptionsForMaterial = (materialName: string) => {
   const normalized = normalizeMaterialName(materialName);
   if (normalized.includes('BASE A / B / C SUB-BASE')) return MATERIAL_RUNDOWN_OPTIONS['BASE A / B / C SUB-BASE'];
   if (normalized.includes('BASE A / B SUB-BASE')) return MATERIAL_RUNDOWN_OPTIONS['BASE A / B SUB-BASE'];
+  if (normalized.includes('PASIR ABU BATU')) return MATERIAL_RUNDOWN_OPTIONS['PASIR ABU BATU'];
   if (normalized.includes('SIRTU SIRDAM GRANULAR')) return MATERIAL_RUNDOWN_OPTIONS['SIRTU SIRDAM GRANULAR'];
-  if (normalized.includes('BATU SPLITE')) return MATERIAL_RUNDOWN_OPTIONS['BATU SPLITE'];
-  if (normalized.includes('PASIR')) return MATERIAL_RUNDOWN_OPTIONS.PASIR;
-  if (normalized.includes('ABU BATU')) return MATERIAL_RUNDOWN_OPTIONS['ABU BATU'];
+  if (normalized.includes('PASIR') && !normalized.includes('PASIR ABU BATU')) return MATERIAL_RUNDOWN_OPTIONS.PASIR;
+  if (normalized.includes('ABU BATU') && !normalized.includes('PASIR ABU BATU')) return MATERIAL_RUNDOWN_OPTIONS['ABU BATU'];
   return null;
 };
 
@@ -107,7 +107,7 @@ export default function ProjectPage() {
     return initial;
   });
   const [committedMaterialTaskByMaterialTestId, setCommittedMaterialTaskByMaterialTestId] = useState<
-    Map<string, { taskId: string }>
+    Map<string, { taskId: string; title?: string; status?: string; progress?: number; deadline?: string | null }>
   >(new Map());
   const [committedFieldTaskByKey, setCommittedFieldTaskByKey] = useState<Map<FieldTestKey, { taskId: string }>>(
     new Map()
@@ -115,13 +115,14 @@ export default function ProjectPage() {
   const [committedPickerSnapshot, setCommittedPickerSnapshot] = useState<{
     materialIds: Set<string>;
     field: Record<FieldTestKey, { checked: boolean; minPoints: string; offer: string }>;
+    rundownByTestId: Record<string, string>;
   }>(() => {
     const field: Record<FieldTestKey, { checked: boolean; minPoints: string; offer: string }> = {} as Record<
       FieldTestKey,
       { checked: boolean; minPoints: string; offer: string }
     >;
     for (const r of FIELD_TEST_ROWS) field[r.key] = { checked: false, minPoints: '', offer: '' };
-    return { materialIds: new Set(), field };
+    return { materialIds: new Set(), field, rundownByTestId: {} };
   });
 
   const resetFieldTests = () => {
@@ -216,7 +217,7 @@ export default function ProjectPage() {
     }
   };
 
-  const safeParseJson = (text: unknown): { min_points?: unknown; offer?: unknown } | null => {
+  const safeParseJson = (text: unknown): { min_points?: unknown; offer?: unknown; rundown?: unknown } | null => {
     if (typeof text !== 'string') return null;
     try {
       const parsed: unknown = JSON.parse(text);
@@ -238,15 +239,30 @@ export default function ProjectPage() {
       const tasksData = await tasksRes.json().catch(() => []);
       const tasks = Array.isArray(tasksData) ? tasksData : [];
 
-      const materialTaskMap = new Map<string, { taskId: string }>();
+      const materialTaskMap = new Map<
+        string,
+        { taskId: string; title?: string; status?: string; progress?: number; deadline?: string | null }
+      >();
       const fieldTaskMap = new Map<FieldTestKey, { taskId: string }>();
+      const rundownByTestId: Record<string, string> = {};
 
       for (const t of tasks) {
         const taskId = String(t?.id || '');
         const materialTestId = t?.material_test_id ? String(t.material_test_id) : null;
         const title = String(t?.title || '');
         if (materialTestId) {
-          materialTaskMap.set(materialTestId, { taskId });
+          materialTaskMap.set(materialTestId, {
+            taskId,
+            title,
+            status: String(t?.status || 'Pending'),
+            progress: Number.isFinite(Number(t?.progress)) ? Number(t.progress) : 0,
+            deadline: t?.deadline ? String(t.deadline) : null,
+          });
+          const materialName = String(t?.material_name || '');
+          const parsed = safeParseJson(t?.description);
+          if (materialName && getRundownOptionsForMaterial(materialName) && parsed && typeof parsed.rundown === 'string') {
+            rundownByTestId[materialTestId] = parsed.rundown;
+          }
           continue;
         }
         if (title.startsWith('FIELD TEST:')) {
@@ -299,6 +315,7 @@ export default function ProjectPage() {
       setCommittedMaterialTaskByMaterialTestId(materialTaskMap);
       setCommittedFieldTaskByKey(fieldTaskMap);
       setSelectedMaterialTestIds(nextSelectedMaterialIds);
+      setSelectedRundownByTestId(rundownByTestId);
       setFieldTests(nextField);
       setCommittedPickerSnapshot(() => {
         const snapField: Record<FieldTestKey, { checked: boolean; minPoints: string; offer: string }> = {} as Record<
@@ -316,6 +333,7 @@ export default function ProjectPage() {
         return {
           materialIds: new Set(Array.from(nextSelectedMaterialIds)),
           field: snapField,
+          rundownByTestId,
         };
       });
     } catch (e) {
@@ -336,6 +354,7 @@ export default function ProjectPage() {
     setPickerMinimized(false);
     setChecklistSearch('');
     setSelectedMaterialTestIds(new Set());
+    setSelectedRundownByTestId({});
     resetFieldTests();
     setCommittedMaterialTaskByMaterialTestId(new Map());
     setCommittedFieldTaskByKey(new Map());
@@ -367,6 +386,7 @@ export default function ProjectPage() {
     setPickerMinimized(false);
     setChecklistSearch('');
     setSelectedMaterialTestIds(new Set());
+    setSelectedRundownByTestId({});
     resetFieldTests();
     setCommittedMaterialTaskByMaterialTestId(new Map());
     setCommittedFieldTaskByKey(new Map());
@@ -419,6 +439,13 @@ export default function ProjectPage() {
     if (committedMaterialIds.size !== selectedMaterialTestIds.size) return true;
     for (const id of selectedMaterialTestIds) {
       if (!committedMaterialIds.has(id)) return true;
+      const materialTest = materialTests.find((item) => item.id === id);
+      const rundownOptions = materialTest ? getRundownOptionsForMaterial(materialTest.material_name) : null;
+      if (rundownOptions) {
+        const currentRundown = selectedRundownByTestId[id] || rundownOptions[0] || '';
+        const committedRundown = committedPickerSnapshot.rundownByTestId[id] || rundownOptions[0] || '';
+        if (currentRundown !== committedRundown) return true;
+      }
     }
 
     for (const r of FIELD_TEST_ROWS) {
@@ -496,6 +523,9 @@ export default function ProjectPage() {
       }
 
       for (const materialTestId of toAddMaterial) {
+        const materialTest = materialTests.find((item) => item.id === materialTestId);
+        const rundownOptions = materialTest ? getRundownOptionsForMaterial(materialTest.material_name) : null;
+        const rundown = rundownOptions ? (selectedRundownByTestId[materialTestId] || rundownOptions[0] || '') : '';
         // eslint-disable-next-line no-await-in-loop
         const res = await apiFetch('/api/v1/tasks', {
           method: 'POST',
@@ -503,7 +533,7 @@ export default function ProjectPage() {
           body: JSON.stringify({
             project_id: selectedId,
             material_test_id: materialTestId,
-            description: '',
+            description: rundownOptions ? JSON.stringify({ rundown }) : null,
             progress: 0,
             deadline: null,
           }),
@@ -513,6 +543,26 @@ export default function ProjectPage() {
           alertError('Gagal', data.detail || 'Terjadi kesalahan pada server.');
           return;
         }
+      }
+
+      for (const materialTestId of Array.from(nextSelectedMaterialIds).filter((id) => prevMaterialMap.has(id))) {
+        const existing = prevMaterialMap.get(materialTestId);
+        const materialTest = materialTests.find((item) => item.id === materialTestId);
+        const rundownOptions = materialTest ? getRundownOptionsForMaterial(materialTest.material_name) : null;
+        if (!existing?.taskId || !rundownOptions) continue;
+        const rundown = selectedRundownByTestId[materialTestId] || rundownOptions[0] || '';
+        // eslint-disable-next-line no-await-in-loop
+        await apiFetch(`/api/v1/tasks/${existing.taskId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: existing.title || materialTest?.test_name || '',
+            description: JSON.stringify({ rundown }),
+            progress: existing.progress ?? 0,
+            deadline: existing.deadline || null,
+            status: existing.status || 'Pending',
+          }),
+        });
       }
 
       for (const key of toRemoveField) {
@@ -615,7 +665,9 @@ export default function ProjectPage() {
 	        const projectId = String(data?.id || '');
 	        if (projectId && selectedMaterialTestIds.size > 0) {
 	          for (const materialTestId of Array.from(selectedMaterialTestIds)) {
-              const rundown = selectedRundownByTestId[materialTestId] || null;
+              const materialTest = materialTests.find((item) => item.id === materialTestId);
+              const rundownOptions = materialTest ? getRundownOptionsForMaterial(materialTest.material_name) : null;
+              const rundown = rundownOptions ? (selectedRundownByTestId[materialTestId] || rundownOptions[0] || '') : '';
             // eslint-disable-next-line no-await-in-loop
             const taskRes = await apiFetch('/api/v1/tasks', {
               method: 'POST',
@@ -623,7 +675,7 @@ export default function ProjectPage() {
               body: JSON.stringify({
                 project_id: projectId,
                 material_test_id: materialTestId,
-                description: JSON.stringify({ rundown }),
+                description: rundownOptions ? JSON.stringify({ rundown }) : null,
                 progress: 0,
                 deadline: null,
               }),
@@ -1218,10 +1270,9 @@ export default function ProjectPage() {
 	                          ) : null}
 
                           {Array.from(new Set(visibleMaterialTests.map((x) => x.material_name))).map((materialName) => {
-	                            const group = visibleMaterialTests.filter((x) => x.material_name === materialName);
+                            const group = visibleMaterialTests.filter((x) => x.material_name === materialName);
                             const normalizedMaterialName = normalizeMaterialName(materialName);
                             const isNoCheckboxMaterial =
-                              normalizedMaterialName === 'PASIR ABU BATU' ||
                               normalizedMaterialName === 'PASIR' ||
                               normalizedMaterialName === 'ABU BATU';
 

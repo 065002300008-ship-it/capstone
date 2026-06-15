@@ -1075,9 +1075,21 @@ def generate_report(project_id: str, preview: bool = Query(False), db: Session =
             from reportlab.lib.pagesizes import A4
             from reportlab.lib.units import cm
             from reportlab.lib.utils import ImageReader
+            from html import escape as _html_escape
 
             def _dots(n: int = 34) -> str:
                 return "." * n
+
+            def _pdf_text(value: str) -> str:
+                return _html_escape(value or "")
+
+            def _test_label(test: dict[str, str]) -> str:
+                test_name = (test.get("test_name") or "").strip()
+                rundown = (test.get("rundown") or "").strip()
+                label = test_name
+                if rundown:
+                    label = f"{label} ({rundown})"
+                return _pdf_text(label)
 
             # Group selected material-tests into rows: material -> test names + rundown.
             grouped: dict[str, list[dict[str, str]]] = {}
@@ -1093,6 +1105,8 @@ def generate_report(project_id: str, preview: bool = Query(False), db: Session =
                 rundown = ""
                 if parsed and isinstance(parsed.get("rundown"), str):
                     rundown = (parsed.get("rundown") or "").strip()
+                if "BATU SPLITE" in material_name.upper():
+                    rundown = ""
                 grouped.setdefault(material_name, [])
                 row = {"test_name": test_name, "rundown": rundown}
                 if row not in grouped[material_name]:
@@ -1191,10 +1205,14 @@ def generate_report(project_id: str, preview: bool = Query(False), db: Session =
             for idx, material_name in enumerate(sorted(grouped.keys()), start=1):
                 tests = grouped.get(material_name, [])
                 jumlah = str(len(tests)) if tests else ""
+                test_lines = "<br/>".join([f"- {_test_label(test)}" for test in tests])
+                material_label = f"<b>{_pdf_text(material_name)}</b>"
+                if test_lines:
+                    material_label = f"{material_label}<br/>{test_lines}"
                 table_data.append(
                     [
                         str(idx),
-                        Paragraph(material_name, styles["Normal"]),
+                        Paragraph(material_label, style_cell),
                         jumlah,
                         "",
                     ]
@@ -1374,15 +1392,16 @@ def generate_report(project_id: str, preview: bool = Query(False), db: Session =
                 rundown = ""
                 if parsed and isinstance(parsed.get("rundown"), str):
                     rundown = (parsed.get("rundown") or "").strip()
+                if "BATU SPLITE" in (material_name or "").upper():
+                    rundown = ""
                 deadline = t.deadline.isoformat() if t.deadline else "-"
                 detail = ""
-                test_label = f"{test_name}{f' ({rundown})' if rundown else ''}"
 
                 data.append([
                     str(idx),
                     Paragraph(material_name, normal),
-                    Paragraph(test_label, normal),
-                    Paragraph("", normal),
+                    Paragraph(test_name, normal),
+                    Paragraph(rundown or "-", normal),
                     Paragraph(t.status or "-", normal),
                     Paragraph(f"{int(t.progress or 0)}%", normal),
                     Paragraph(deadline, normal),

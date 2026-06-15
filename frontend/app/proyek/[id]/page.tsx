@@ -88,7 +88,7 @@ export default function ProjectDetailPage() {
     }
   }, []);
 
-  const safeParseJson = (text: unknown): { min_points?: unknown; offer?: unknown } | null => {
+  const safeParseJson = (text: unknown): { min_points?: unknown; offer?: unknown; rundown?: unknown } | null => {
     if (typeof text !== 'string') return null;
     try {
       const parsed: unknown = JSON.parse(text);
@@ -248,7 +248,8 @@ export default function ProjectDetailPage() {
       const isField = !t.material_test_id && String(t.title || '').startsWith('FIELD TEST:');
       const material = isField ? 'FIELD TEST' : (t.material_name || '-');
       const parsed = safeParseJson(t.description);
-      const rundown = parsed && typeof parsed.rundown === 'string' ? parsed.rundown : '';
+      const rawRundown = parsed && typeof parsed.rundown === 'string' ? parsed.rundown : '';
+      const rundown = material.toUpperCase().includes('BATU SPLITE') ? '' : rawRundown;
       const fieldName = String(t.title || t.test_name || '').replace('FIELD TEST:', '').trim();
       const item = { task: t, isField, fieldName, rundown };
       if (!grouped.has(material)) grouped.set(material, []);
